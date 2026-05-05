@@ -1,8 +1,10 @@
 -- ════════════════════════════════════════════════════════════════════════════
---  Fake Position Spoof  ·  Matcha UI  ·  v7.0
+--  Fake Position Spoof  ·  Matcha UI  ·  v8.0
 --  ✦ Title-bar drag only
 --  ✦ X / Y / Z slider + inline type-to-edit  (range ±150,000)
---  ✦ Per-slider reset buttons on every property          [NEW]
+--  ✦ Per-slider reset buttons on every property
+--  ✦ Search bar on Targets & OrbTargets tabs              [NEW]
+--  ✦ Account age badge on every player row                [NEW]
 --  ✦ Orbit tab — speed, distance, height, random direction
 --  ✦ Separate Orbit Targets tab (independent targeting)  [NEW]
 --  ✦ Stick to You mode — spoof tracks your real position [NEW]
@@ -66,6 +68,7 @@ local state = {
 }
 local targeted         = {}
 local orbitTargeted    = {}  -- separate targeting for orbit
+local accountAgeCache  = {}  -- [userId] = ageInDays
 local customPresets    = {}
 local settingsPresets  = {}
 local spoofConn        = nil
@@ -937,7 +940,7 @@ local function buildGUI()
     end)
 
     local titleLbl=Instance.new("TextLabel"); titleLbl.Size=UDim2.new(1,-120,0,44); titleLbl.Position=UDim2.new(0,14,0,0)
-    titleLbl.BackgroundTransparency=1; titleLbl.Text="Fake Position  v7"
+    titleLbl.BackgroundTransparency=1; titleLbl.Text="Fake Position  v8"
     titleLbl.TextSize=14; titleLbl.Font=Enum.Font.GothamBold
     titleLbl.TextColor3=T.text; titleLbl.TextXAlignment=Enum.TextXAlignment.Left
     titleLbl.ZIndex=4; titleLbl.Parent=winFrame
@@ -1157,10 +1160,27 @@ local function buildGUI()
     -- ════════════════════════════════════════════════════════════════════
     --  TARGETS PAGE
     -- ════════════════════════════════════════════════════════════════════
+    -- Search bar
+    local spoofSearchQuery = ""
+    local spoofSearchRow=Instance.new("Frame"); spoofSearchRow.Size=UDim2.new(1,0,0,34); spoofSearchRow.LayoutOrder=0
+    spoofSearchRow.BackgroundColor3=T.card; spoofSearchRow.BorderSizePixel=0; spoofSearchRow.Parent=targetPage
+    corner(spoofSearchRow,8); stroke(spoofSearchRow,T.border)
+    local spoofSearchIcon=Instance.new("TextLabel"); spoofSearchIcon.Size=UDim2.new(0,28,1,0)
+    spoofSearchIcon.BackgroundTransparency=1; spoofSearchIcon.Text="🔍"; spoofSearchIcon.TextSize=13
+    spoofSearchIcon.Font=Enum.Font.Gotham; spoofSearchIcon.TextColor3=T.sub; spoofSearchIcon.Parent=spoofSearchRow
+    local spoofSearchBox=Instance.new("TextBox"); spoofSearchBox.Size=UDim2.new(1,-36,1,-8); spoofSearchBox.Position=UDim2.new(0,28,0,4)
+    spoofSearchBox.BackgroundTransparency=1; spoofSearchBox.PlaceholderText="Search players..."
+    spoofSearchBox.PlaceholderColor3=T.sub; spoofSearchBox.Text=""; spoofSearchBox.TextColor3=T.text
+    spoofSearchBox.TextSize=12; spoofSearchBox.Font=Enum.Font.Gotham; spoofSearchBox.ClearTextOnFocus=false
+    spoofSearchBox.BorderSizePixel=0; spoofSearchBox.Parent=spoofSearchRow
+
     local targetRowsList={}
     local function rebuildTargets()
         for _,r in pairs(targetRowsList) do r:Destroy() end; targetRowsList={}
-        local taRow=Instance.new("Frame"); taRow.Size=UDim2.new(1,0,0,50); taRow.LayoutOrder=0
+        local q=spoofSearchQuery:lower()
+
+        -- "Target All" header row — always visible
+        local taRow=Instance.new("Frame"); taRow.Size=UDim2.new(1,0,0,50); taRow.LayoutOrder=1
         taRow.BackgroundColor3=T.card; taRow.BorderSizePixel=0; taRow.Parent=targetPage; corner(taRow,10)
         stroke(taRow,state.targetAll and T.accentD or T.border,state.targetAll and 1.5 or 1); table.insert(targetRowsList,taRow)
         local taIconF=Instance.new("Frame"); taIconF.Size=UDim2.new(0,38,0,38); taIconF.Position=UDim2.new(0,6,0.5,-19)
@@ -1187,46 +1207,73 @@ local function buildGUI()
         taRow.MouseEnter:Connect(function() tw(taRow,{BackgroundColor3=T.cardH}) end)
         taRow.MouseLeave:Connect(function() tw(taRow,{BackgroundColor3=T.card}) end)
 
+        local visIdx=0
         for idx,p in ipairs(Players:GetPlayers()) do
             if p~=LocalPlayer then
-                local active=targeted[p.Name]==true
-                local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,54); row.LayoutOrder=idx
-                row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=targetPage; corner(row,10)
-                stroke(row,active and T.accentD or T.border,active and 1.5 or 1); table.insert(targetRowsList,row)
-                local avaCircle=Instance.new("Frame"); avaCircle.Size=UDim2.new(0,40,0,40); avaCircle.Position=UDim2.new(0,7,0.5,-20)
-                avaCircle.BackgroundColor3=T.surface; avaCircle.BorderSizePixel=0; avaCircle.ClipsDescendants=true; avaCircle.Parent=row; corner(avaCircle,20)
-                if active then stroke(avaCircle,T.accent,2) end
-                local avaImg=Instance.new("ImageLabel"); avaImg.Size=UDim2.new(1,0,1,0); avaImg.BackgroundTransparency=1; avaImg.Image=""; avaImg.Parent=avaCircle
-                local uid=p.UserId; task.spawn(function()
-                    local ok,img=pcall(function() return Players:GetUserThumbnailAsync(uid,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size48x48) end)
-                    if ok and img then avaImg.Image=img end
-                end)
-                local dispN=Instance.new("TextLabel"); dispN.Size=UDim2.new(1,-106,0,18); dispN.Position=UDim2.new(0,55,0,9)
-                dispN.BackgroundTransparency=1; dispN.Text=p.DisplayName; dispN.TextSize=13; dispN.Font=Enum.Font.GothamBold
-                dispN.TextColor3=active and T.text or T.sub; dispN.TextXAlignment=Enum.TextXAlignment.Left; dispN.TextTruncate=Enum.TextTruncate.AtEnd; dispN.Parent=row
-                local userN=Instance.new("TextLabel"); userN.Size=UDim2.new(1,-106,0,13); userN.Position=UDim2.new(0,55,0,29)
-                userN.BackgroundTransparency=1; userN.Text="@"..p.Name; userN.TextSize=10; userN.Font=Enum.Font.Gotham
-                userN.TextColor3=T.sub; userN.TextXAlignment=Enum.TextXAlignment.Left; userN.TextTruncate=Enum.TextTruncate.AtEnd; userN.Parent=row
-                local pPill=Instance.new("Frame"); pPill.Size=UDim2.new(0,40,0,22); pPill.Position=UDim2.new(1,-48,0.5,-11)
-                pPill.BackgroundColor3=active and T.accent or T.border; pPill.BorderSizePixel=0; pPill.Parent=row; corner(pPill,11)
-                local pPT=Instance.new("Frame"); pPT.Size=UDim2.new(0,15,0,15)
-                pPT.Position=active and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
-                pPT.BackgroundColor3=Color3.fromRGB(240,240,240); pPT.BorderSizePixel=0; pPT.Parent=pPill; corner(pPT,8)
-                local clickable=Instance.new("TextButton"); clickable.Size=UDim2.new(1,0,1,0); clickable.BackgroundTransparency=1; clickable.Text=""; clickable.Parent=row
-                local pName=p.Name
-                clickable.MouseButton1Click:Connect(function()
-                    targeted[pName]=not targeted[pName]
-                    local any=false; for _,v in pairs(targeted) do if v then any=true end end
-                    state.enabled=any or state.targetAll
-                    if state.enabled then startSpoof() end
-                    -- ESP is independent of targeting — no ESP changes here
-                    updateStatus(); rebuildTargets()
-                end)
-                row.MouseEnter:Connect(function() tw(row,{BackgroundColor3=T.cardH}) end)
-                row.MouseLeave:Connect(function() tw(row,{BackgroundColor3=T.card}) end)
+                -- Filter by search query (display name or username)
+                local matchSearch = q=="" or p.Name:lower():find(q,1,true) or p.DisplayName:lower():find(q,1,true)
+                if matchSearch then
+                    visIdx=visIdx+1
+                    local active=targeted[p.Name]==true
+                    local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,60); row.LayoutOrder=visIdx+1
+                    row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=targetPage; corner(row,10)
+                    stroke(row,active and T.accentD or T.border,active and 1.5 or 1); table.insert(targetRowsList,row)
+
+                    -- Avatar
+                    local avaCircle=Instance.new("Frame"); avaCircle.Size=UDim2.new(0,40,0,40); avaCircle.Position=UDim2.new(0,7,0.5,-20)
+                    avaCircle.BackgroundColor3=T.surface; avaCircle.BorderSizePixel=0; avaCircle.ClipsDescendants=true; avaCircle.Parent=row; corner(avaCircle,20)
+                    if active then stroke(avaCircle,T.accent,2) end
+                    local avaImg=Instance.new("ImageLabel"); avaImg.Size=UDim2.new(1,0,1,0); avaImg.BackgroundTransparency=1; avaImg.Image=""; avaImg.Parent=avaCircle
+                    local uid=p.UserId; task.spawn(function()
+                        local ok,img=pcall(function() return Players:GetUserThumbnailAsync(uid,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size48x48) end)
+                        if ok and img then avaImg.Image=img end
+                    end)
+
+                    -- Account age badge (bottom-right of avatar circle)
+                    local ageBadge=Instance.new("Frame"); ageBadge.Size=UDim2.new(0,32,0,14)
+                    ageBadge.Position=UDim2.new(0,7+40-32,0.5+20/60*0,-3)  -- below avatar
+                    ageBadge.Position=UDim2.new(0,9,0.5,12)
+                    ageBadge.BackgroundColor3=T.bg; ageBadge.BorderSizePixel=0; ageBadge.ZIndex=6; ageBadge.Parent=row; corner(ageBadge,4); stroke(ageBadge,T.border)
+                    local ageLbl=Instance.new("TextLabel"); ageLbl.Size=UDim2.new(1,0,1,0)
+                    ageLbl.BackgroundTransparency=1; ageLbl.Text="..."; ageLbl.TextSize=8; ageLbl.Font=Enum.Font.GothamBold
+                    ageLbl.TextColor3=T.sub; ageLbl.TextXAlignment=Enum.TextXAlignment.Center; ageLbl.ZIndex=7; ageLbl.Parent=ageBadge
+                    getAccountAge(uid, function(label) ageLbl.Text=label end)
+
+                    -- Names
+                    local dispN=Instance.new("TextLabel"); dispN.Size=UDim2.new(1,-112,0,18); dispN.Position=UDim2.new(0,55,0,10)
+                    dispN.BackgroundTransparency=1; dispN.Text=p.DisplayName; dispN.TextSize=13; dispN.Font=Enum.Font.GothamBold
+                    dispN.TextColor3=active and T.text or T.sub; dispN.TextXAlignment=Enum.TextXAlignment.Left; dispN.TextTruncate=Enum.TextTruncate.AtEnd; dispN.Parent=row
+                    local userN=Instance.new("TextLabel"); userN.Size=UDim2.new(1,-112,0,13); userN.Position=UDim2.new(0,55,0,30)
+                    userN.BackgroundTransparency=1; userN.Text="@"..p.Name; userN.TextSize=10; userN.Font=Enum.Font.Gotham
+                    userN.TextColor3=T.sub; userN.TextXAlignment=Enum.TextXAlignment.Left; userN.TextTruncate=Enum.TextTruncate.AtEnd; userN.Parent=row
+
+                    -- Toggle pill
+                    local pPill=Instance.new("Frame"); pPill.Size=UDim2.new(0,40,0,22); pPill.Position=UDim2.new(1,-48,0.5,-11)
+                    pPill.BackgroundColor3=active and T.accent or T.border; pPill.BorderSizePixel=0; pPill.Parent=row; corner(pPill,11)
+                    local pPT=Instance.new("Frame"); pPT.Size=UDim2.new(0,15,0,15)
+                    pPT.Position=active and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
+                    pPT.BackgroundColor3=Color3.fromRGB(240,240,240); pPT.BorderSizePixel=0; pPT.Parent=pPill; corner(pPT,8)
+                    local clickable=Instance.new("TextButton"); clickable.Size=UDim2.new(1,0,1,0); clickable.BackgroundTransparency=1; clickable.Text=""; clickable.Parent=row
+                    local pName=p.Name
+                    clickable.MouseButton1Click:Connect(function()
+                        targeted[pName]=not targeted[pName]
+                        local any=false; for _,v in pairs(targeted) do if v then any=true end end
+                        state.enabled=any or state.targetAll
+                        if state.enabled then startSpoof() end
+                        updateStatus(); rebuildTargets()
+                    end)
+                    row.MouseEnter:Connect(function() tw(row,{BackgroundColor3=T.cardH}) end)
+                    row.MouseLeave:Connect(function() tw(row,{BackgroundColor3=T.card}) end)
+                end
             end
         end
     end
+
+    -- Live search filter
+    spoofSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        spoofSearchQuery = spoofSearchBox.Text; rebuildTargets()
+    end)
+
     Players.PlayerAdded:Connect(rebuildTargets)
     Players.PlayerRemoving:Connect(function(p) targeted[p.Name]=nil; rebuildTargets() end)
 
@@ -1321,11 +1368,26 @@ local function buildGUI()
     orbitTargetInfoLbl.Text="🔴  Choose which players the Orbit system affects.\nThis is separate from Position Spoof targets."
     orbitTargetInfoLbl.Parent=orbitTargetInfoCard
 
+    -- Orbit target search bar
+    local orbitSearchQuery = ""
+    local orbitSearchRow=Instance.new("Frame"); orbitSearchRow.Size=UDim2.new(1,0,0,34); orbitSearchRow.LayoutOrder=1
+    orbitSearchRow.BackgroundColor3=T.card; orbitSearchRow.BorderSizePixel=0; orbitSearchRow.Parent=orbitTargetPage
+    corner(orbitSearchRow,8); stroke(orbitSearchRow,Color3.fromRGB(80,18,18))
+    local orbitSearchIcon=Instance.new("TextLabel"); orbitSearchIcon.Size=UDim2.new(0,28,1,0)
+    orbitSearchIcon.BackgroundTransparency=1; orbitSearchIcon.Text="🔍"; orbitSearchIcon.TextSize=13
+    orbitSearchIcon.Font=Enum.Font.Gotham; orbitSearchIcon.TextColor3=T.sub; orbitSearchIcon.Parent=orbitSearchRow
+    local orbitSearchBox=Instance.new("TextBox"); orbitSearchBox.Size=UDim2.new(1,-36,1,-8); orbitSearchBox.Position=UDim2.new(0,28,0,4)
+    orbitSearchBox.BackgroundTransparency=1; orbitSearchBox.PlaceholderText="Search players..."
+    orbitSearchBox.PlaceholderColor3=T.sub; orbitSearchBox.Text=""; orbitSearchBox.TextColor3=T.text
+    orbitSearchBox.TextSize=12; orbitSearchBox.Font=Enum.Font.Gotham; orbitSearchBox.ClearTextOnFocus=false
+    orbitSearchBox.BorderSizePixel=0; orbitSearchBox.Parent=orbitSearchRow
+
     local orbitTargetRowsList={}
     local function rebuildOrbitTargets()
         for _,r in pairs(orbitTargetRowsList) do r:Destroy() end; orbitTargetRowsList={}
+        local q=orbitSearchQuery:lower()
 
-        -- Target All row
+        -- Orbit All header row — always visible
         local taRow=Instance.new("Frame"); taRow.Size=UDim2.new(1,0,0,50); taRow.LayoutOrder=2
         taRow.BackgroundColor3=T.card; taRow.BorderSizePixel=0; taRow.Parent=orbitTargetPage; corner(taRow,10)
         stroke(taRow,state.targetAll and T.red or T.border,state.targetAll and 1.5 or 1); table.insert(orbitTargetRowsList,taRow)
@@ -1346,7 +1408,6 @@ local function buildGUI()
         oTaPT.Position=state.targetAll and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
         oTaPT.BackgroundColor3=Color3.fromRGB(240,240,240); oTaPT.BorderSizePixel=0; oTaPT.Parent=oTaPill; corner(oTaPT,8)
         local oTaClick=Instance.new("TextButton"); oTaClick.Size=UDim2.new(1,0,1,0); oTaClick.BackgroundTransparency=1; oTaClick.Text=""; oTaClick.Parent=taRow
-        -- Note: orbit "target all" reuses state.targetAll but driven from this page too
         oTaClick.MouseButton1Click:Connect(function()
             state.targetAll=not state.targetAll
             rebuildOrbitTargets()
@@ -1354,43 +1415,69 @@ local function buildGUI()
         taRow.MouseEnter:Connect(function() tw(taRow,{BackgroundColor3=T.cardH}) end)
         taRow.MouseLeave:Connect(function() tw(taRow,{BackgroundColor3=T.card}) end)
 
-        -- Per-player rows
+        -- Per-player rows (filtered)
+        local visIdx=0
         for idx, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then
-                local active = orbitTargeted[p.Name] == true
-                local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,54); row.LayoutOrder=idx+2
-                row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=orbitTargetPage; corner(row,10)
-                stroke(row,active and Color3.fromRGB(80,18,18) or T.border,active and 1.5 or 1); table.insert(orbitTargetRowsList,row)
-                local avaCircle=Instance.new("Frame"); avaCircle.Size=UDim2.new(0,40,0,40); avaCircle.Position=UDim2.new(0,7,0.5,-20)
-                avaCircle.BackgroundColor3=T.surface; avaCircle.BorderSizePixel=0; avaCircle.ClipsDescendants=true; avaCircle.Parent=row; corner(avaCircle,20)
-                if active then stroke(avaCircle,T.red,2) end
-                local avaImg=Instance.new("ImageLabel"); avaImg.Size=UDim2.new(1,0,1,0); avaImg.BackgroundTransparency=1; avaImg.Image=""; avaImg.Parent=avaCircle
-                local uid=p.UserId; task.spawn(function()
-                    local ok,img=pcall(function() return Players:GetUserThumbnailAsync(uid,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size48x48) end)
-                    if ok and img then avaImg.Image=img end
-                end)
-                local dispN=Instance.new("TextLabel"); dispN.Size=UDim2.new(1,-106,0,18); dispN.Position=UDim2.new(0,55,0,9)
-                dispN.BackgroundTransparency=1; dispN.Text=p.DisplayName; dispN.TextSize=13; dispN.Font=Enum.Font.GothamBold
-                dispN.TextColor3=active and T.text or T.sub; dispN.TextXAlignment=Enum.TextXAlignment.Left; dispN.TextTruncate=Enum.TextTruncate.AtEnd; dispN.Parent=row
-                local userN=Instance.new("TextLabel"); userN.Size=UDim2.new(1,-106,0,13); userN.Position=UDim2.new(0,55,0,29)
-                userN.BackgroundTransparency=1; userN.Text="@"..p.Name; userN.TextSize=10; userN.Font=Enum.Font.Gotham
-                userN.TextColor3=T.sub; userN.TextXAlignment=Enum.TextXAlignment.Left; userN.TextTruncate=Enum.TextTruncate.AtEnd; userN.Parent=row
-                local pPill=Instance.new("Frame"); pPill.Size=UDim2.new(0,40,0,22); pPill.Position=UDim2.new(1,-48,0.5,-11)
-                pPill.BackgroundColor3=active and T.red or T.border; pPill.BorderSizePixel=0; pPill.Parent=row; corner(pPill,11)
-                local pPT=Instance.new("Frame"); pPT.Size=UDim2.new(0,15,0,15)
-                pPT.Position=active and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
-                pPT.BackgroundColor3=Color3.fromRGB(240,240,240); pPT.BorderSizePixel=0; pPT.Parent=pPill; corner(pPT,8)
-                local clickable=Instance.new("TextButton"); clickable.Size=UDim2.new(1,0,1,0); clickable.BackgroundTransparency=1; clickable.Text=""; clickable.Parent=row
-                local pName=p.Name
-                clickable.MouseButton1Click:Connect(function()
-                    orbitTargeted[pName]=not orbitTargeted[pName]
-                    rebuildOrbitTargets()
-                end)
-                row.MouseEnter:Connect(function() tw(row,{BackgroundColor3=T.cardH}) end)
-                row.MouseLeave:Connect(function() tw(row,{BackgroundColor3=T.card}) end)
+                local matchSearch = q=="" or p.Name:lower():find(q,1,true) or p.DisplayName:lower():find(q,1,true)
+                if matchSearch then
+                    visIdx=visIdx+1
+                    local active = orbitTargeted[p.Name] == true
+                    local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,60); row.LayoutOrder=visIdx+2
+                    row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=orbitTargetPage; corner(row,10)
+                    stroke(row,active and Color3.fromRGB(80,18,18) or T.border,active and 1.5 or 1); table.insert(orbitTargetRowsList,row)
+
+                    -- Avatar
+                    local avaCircle=Instance.new("Frame"); avaCircle.Size=UDim2.new(0,40,0,40); avaCircle.Position=UDim2.new(0,7,0.5,-20)
+                    avaCircle.BackgroundColor3=T.surface; avaCircle.BorderSizePixel=0; avaCircle.ClipsDescendants=true; avaCircle.Parent=row; corner(avaCircle,20)
+                    if active then stroke(avaCircle,T.red,2) end
+                    local avaImg=Instance.new("ImageLabel"); avaImg.Size=UDim2.new(1,0,1,0); avaImg.BackgroundTransparency=1; avaImg.Image=""; avaImg.Parent=avaCircle
+                    local uid=p.UserId; task.spawn(function()
+                        local ok,img=pcall(function() return Players:GetUserThumbnailAsync(uid,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size48x48) end)
+                        if ok and img then avaImg.Image=img end
+                    end)
+
+                    -- Account age badge
+                    local ageBadge=Instance.new("Frame"); ageBadge.Size=UDim2.new(0,32,0,14)
+                    ageBadge.Position=UDim2.new(0,9,0.5,12)
+                    ageBadge.BackgroundColor3=T.bg; ageBadge.BorderSizePixel=0; ageBadge.ZIndex=6; ageBadge.Parent=row; corner(ageBadge,4); stroke(ageBadge,Color3.fromRGB(80,18,18))
+                    local ageLbl=Instance.new("TextLabel"); ageLbl.Size=UDim2.new(1,0,1,0)
+                    ageLbl.BackgroundTransparency=1; ageLbl.Text="..."; ageLbl.TextSize=8; ageLbl.Font=Enum.Font.GothamBold
+                    ageLbl.TextColor3=T.red; ageLbl.TextXAlignment=Enum.TextXAlignment.Center; ageLbl.ZIndex=7; ageLbl.Parent=ageBadge
+                    getAccountAge(uid, function(label) ageLbl.Text=label end)
+
+                    -- Names
+                    local dispN=Instance.new("TextLabel"); dispN.Size=UDim2.new(1,-112,0,18); dispN.Position=UDim2.new(0,55,0,10)
+                    dispN.BackgroundTransparency=1; dispN.Text=p.DisplayName; dispN.TextSize=13; dispN.Font=Enum.Font.GothamBold
+                    dispN.TextColor3=active and T.text or T.sub; dispN.TextXAlignment=Enum.TextXAlignment.Left; dispN.TextTruncate=Enum.TextTruncate.AtEnd; dispN.Parent=row
+                    local userN=Instance.new("TextLabel"); userN.Size=UDim2.new(1,-112,0,13); userN.Position=UDim2.new(0,55,0,30)
+                    userN.BackgroundTransparency=1; userN.Text="@"..p.Name; userN.TextSize=10; userN.Font=Enum.Font.Gotham
+                    userN.TextColor3=T.sub; userN.TextXAlignment=Enum.TextXAlignment.Left; userN.TextTruncate=Enum.TextTruncate.AtEnd; userN.Parent=row
+
+                    -- Toggle pill
+                    local pPill=Instance.new("Frame"); pPill.Size=UDim2.new(0,40,0,22); pPill.Position=UDim2.new(1,-48,0.5,-11)
+                    pPill.BackgroundColor3=active and T.red or T.border; pPill.BorderSizePixel=0; pPill.Parent=row; corner(pPill,11)
+                    local pPT=Instance.new("Frame"); pPT.Size=UDim2.new(0,15,0,15)
+                    pPT.Position=active and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
+                    pPT.BackgroundColor3=Color3.fromRGB(240,240,240); pPT.BorderSizePixel=0; pPT.Parent=pPill; corner(pPT,8)
+                    local clickable=Instance.new("TextButton"); clickable.Size=UDim2.new(1,0,1,0); clickable.BackgroundTransparency=1; clickable.Text=""; clickable.Parent=row
+                    local pName=p.Name
+                    clickable.MouseButton1Click:Connect(function()
+                        orbitTargeted[pName]=not orbitTargeted[pName]
+                        rebuildOrbitTargets()
+                    end)
+                    row.MouseEnter:Connect(function() tw(row,{BackgroundColor3=T.cardH}) end)
+                    row.MouseLeave:Connect(function() tw(row,{BackgroundColor3=T.card}) end)
+                end
             end
         end
     end
+
+    -- Live orbit search filter
+    orbitSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        orbitSearchQuery = orbitSearchBox.Text; rebuildOrbitTargets()
+    end)
+
     Players.PlayerAdded:Connect(function() rebuildOrbitTargets() end)
     Players.PlayerRemoving:Connect(function(p) orbitTargeted[p.Name]=nil; rebuildOrbitTargets() end)
 
