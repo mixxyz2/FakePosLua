@@ -1,8 +1,11 @@
 -- ════════════════════════════════════════════════════════════════════════════
---  Fake Position Spoof  ·  Matcha UI  ·  v6.0
+--  Fake Position Spoof  ·  Matcha UI  ·  v7.0
 --  ✦ Title-bar drag only
 --  ✦ X / Y / Z slider + inline type-to-edit  (range ±150,000)
---  ✦ Orbit tab — speed, distance, height, random direction [NEW]
+--  ✦ Per-slider reset buttons on every property          [NEW]
+--  ✦ Orbit tab — speed, distance, height, random direction
+--  ✦ Separate Orbit Targets tab (independent targeting)  [NEW]
+--  ✦ Stick to You mode — spoof tracks your real position [NEW]
 --  ✦ Fly tab — speed + height controls
 --  ✦ Noclip tab + Ghost Mode enable/disable
 --  ✦ FOV Visualizer overlay
@@ -11,7 +14,7 @@
 --  ✦ ESP / highlight overlay for ALL players
 --  ✦ Persistent spoofKey + guiKey + esp settings
 --  ✦ Unified save file with settings + presets blocks
---  ✦ Faraway + Origin presets                            [NEW]
+--  ✦ Faraway + Origin presets
 -- ════════════════════════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -41,6 +44,8 @@ local state = {
     randomDir  = false,
     randomDirTimer = 0,
     randomDirVec   = Vector3.new(0, 1, 0),
+    -- Stick to player (spoof follows local player's real position + offset)
+    stickEnabled = false,
     -- ESP
     espEnabled = true,
     espR = 122, espG = 186, espB = 136,
@@ -60,6 +65,7 @@ local state = {
     fovRange    = 60,  -- degrees half-angle
 }
 local targeted         = {}
+local orbitTargeted    = {}  -- separate targeting for orbit
 local customPresets    = {}
 local settingsPresets  = {}
 local spoofConn        = nil
@@ -271,6 +277,16 @@ local function startSpoof()
     spoofConn = RunService.Heartbeat:Connect(function(dt)
         if not state.enabled then return end
 
+        -- In stick mode always use the player's live position as base
+        local base
+        if state.stickEnabled then
+            local char = LocalPlayer.Character
+            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            base = hrp and hrp.Position or spoofBasePos
+        else
+            base = spoofBasePos
+        end
+
         local fp
         if state.randomDir then
             state.randomDirTimer = state.randomDirTimer + dt
@@ -280,10 +296,9 @@ local function startSpoof()
             end
             local mag = math.sqrt(state.x^2 + state.y^2 + state.z^2)
             if mag < 1 then mag = 1000 end
-            fp = spoofBasePos + state.randomDirVec * mag
+            fp = base + state.randomDirVec * mag
         else
-            -- Use the captured base position so the spoof position stays stable
-            fp = spoofBasePos + Vector3.new(state.x, state.y, state.z)
+            fp = base + Vector3.new(state.x, state.y, state.z)
         end
 
         for _, p in ipairs(Players:GetPlayers()) do
@@ -333,10 +348,10 @@ local function startOrbit()
             local hrp  = char and char:FindFirstChild("HumanoidRootPart")
             if not hrp then return end
 
-            -- Use the first targeted/targetAll player as the anchor
+            -- Use the first orbit-targeted player as the anchor
             local anchor = nil
             for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and (state.targetAll or targeted[p.Name]) then
+                if p ~= LocalPlayer and (state.targetAll or orbitTargeted[p.Name]) then
                     local c = p.Character; local h = c and c:FindFirstChild("HumanoidRootPart")
                     if h then anchor = h.Position; break end
                 end
@@ -352,7 +367,7 @@ local function startOrbit()
             local fp   = base + Vector3.new(ox, oy, oz)
 
             for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and (state.targetAll or targeted[p.Name]) then
+                if p ~= LocalPlayer and (state.targetAll or orbitTargeted[p.Name]) then
                     local c = p.Character; local h = c and c:FindFirstChild("HumanoidRootPart")
                     if h then h.CFrame = CFrame.new(fp) end
                 end
@@ -756,24 +771,33 @@ local function makeSlider(parent, lText, minV, maxV, defV, onChange, accentColor
     local ac = accentColor or T.accent
     local acd = T.accentD
 
-    local wrap=Instance.new("Frame"); wrap.Size=UDim2.new(1,0,0,68)
+    local wrap=Instance.new("Frame"); wrap.Size=UDim2.new(1,0,0,78)
     wrap.BackgroundColor3=T.card; wrap.BorderSizePixel=0; wrap.Parent=parent; corner(wrap,10)
 
     local hdr=Instance.new("Frame"); hdr.Size=UDim2.new(1,-24,0,18); hdr.Position=UDim2.new(0,12,0,8)
     hdr.BackgroundTransparency=1; hdr.Parent=wrap
 
-    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(0.55,0,1,0); lbl.BackgroundTransparency=1
+    local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(0.45,0,1,0); lbl.BackgroundTransparency=1
     lbl.Text=lText; lbl.TextSize=11; lbl.Font=Enum.Font.GothamBold; lbl.TextColor3=T.sub
     lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=hdr
 
-    local valBox=Instance.new("TextBox"); valBox.Size=UDim2.new(0.45,-2,1,2); valBox.Position=UDim2.new(0.55,2,0,-1)
+    local valBox=Instance.new("TextBox"); valBox.Size=UDim2.new(0.35,-2,1,2); valBox.Position=UDim2.new(0.45,2,0,-1)
     valBox.BackgroundColor3=T.inputBG; valBox.BorderSizePixel=0; valBox.Text=tostring(defV)
     valBox.PlaceholderText="value"; valBox.PlaceholderColor3=T.sub; valBox.TextColor3=ac
     valBox.TextSize=12; valBox.Font=Enum.Font.GothamBold; valBox.TextXAlignment=Enum.TextXAlignment.Right
     valBox.ClearTextOnFocus=false; valBox.ZIndex=6; valBox.Parent=hdr; corner(valBox,5); stroke(valBox,acd,1)
     local vbPad=Instance.new("UIPadding"); vbPad.PaddingRight=UDim.new(0,5); vbPad.Parent=valBox
 
-    local track=Instance.new("Frame"); track.Size=UDim2.new(1,-24,0,4); track.Position=UDim2.new(0,12,0,50)
+    -- Reset button (resets to default value)
+    local resetBtn=Instance.new("TextButton"); resetBtn.Size=UDim2.new(0.18,-2,1,2)
+    resetBtn.Position=UDim2.new(0.82,2,0,-1)
+    resetBtn.BackgroundColor3=T.surface; resetBtn.BorderSizePixel=0; resetBtn.Text="↺"
+    resetBtn.TextColor3=T.sub; resetBtn.TextSize=13; resetBtn.Font=Enum.Font.GothamBold
+    resetBtn.AutoButtonColor=false; resetBtn.ZIndex=6; resetBtn.Parent=hdr; corner(resetBtn,5); stroke(resetBtn,acd,1)
+    resetBtn.MouseEnter:Connect(function() tw(resetBtn,{BackgroundColor3=T.cardH,TextColor3=ac}) end)
+    resetBtn.MouseLeave:Connect(function() tw(resetBtn,{BackgroundColor3=T.surface,TextColor3=T.sub}) end)
+
+    local track=Instance.new("Frame"); track.Size=UDim2.new(1,-24,0,4); track.Position=UDim2.new(0,12,0,58)
     track.BackgroundColor3=T.border; track.BorderSizePixel=0; track.Parent=wrap; corner(track,4)
 
     local fill=Instance.new("Frame"); fill.Size=UDim2.new(0,0,1,0); fill.BackgroundColor3=ac
@@ -785,23 +809,26 @@ local function makeSlider(parent, lText, minV, maxV, defV, onChange, accentColor
 
     local cur=defV
     local function updateVisual(v)
-        -- keep thumb/fill visually within track even if value exceeds range
         local pct=math.clamp((v-minV)/(maxV-minV),0,1)
         fill.Size=UDim2.new(pct,0,1,0); thumb.Position=UDim2.new(pct,-THUMB/2,0.5,-THUMB/2)
     end
     local function setV(v,fire)
-        -- slider drag: clamp to declared range
         v=math.clamp(math.floor(v+0.5),minV,maxV); cur=v
         updateVisual(v)
         valBox.Text=tostring(v); if fire and onChange then onChange(v) end
     end
     local function setVTyped(v,fire)
-        -- typed input: accept any integer, only clamp the visual
         v=math.floor(v+0.5); cur=v
         updateVisual(v)
         valBox.Text=tostring(v); if fire and onChange then onChange(v) end
     end
     setV(defV,false)
+
+    -- Wire up reset button to restore default
+    resetBtn.MouseButton1Click:Connect(function()
+        setV(defV,true)
+        tw(resetBtn,{BackgroundColor3=T.accentD}); task.delay(0.3,function() tw(resetBtn,{BackgroundColor3=T.surface}) end)
+    end)
 
     local function fromInput(inp)
         local ax=track.AbsolutePosition.X; local aw=track.AbsoluteSize.X
@@ -875,7 +902,7 @@ local function buildGUI()
     local W, FH, MH = 340, 520, 44
     local minimized=false; local guiVisible=true
 
-    local TABS  = {"Offset","Targets","Orbit","Fly","Noclip","ESP","Settings"}
+    local TABS  = {"Offset","Targets","Orbit","OrbTargets","Fly","Noclip","ESP","Settings"}
     local tabCount = #TABS
 
     -- ── Window frame ──────────────────────────────────────────────────
@@ -910,7 +937,7 @@ local function buildGUI()
     end)
 
     local titleLbl=Instance.new("TextLabel"); titleLbl.Size=UDim2.new(1,-120,0,44); titleLbl.Position=UDim2.new(0,14,0,0)
-    titleLbl.BackgroundTransparency=1; titleLbl.Text="Fake Position  v6"
+    titleLbl.BackgroundTransparency=1; titleLbl.Text="Fake Position  v7"
     titleLbl.TextSize=14; titleLbl.Font=Enum.Font.GothamBold
     titleLbl.TextColor3=T.text; titleLbl.TextXAlignment=Enum.TextXAlignment.Left
     titleLbl.ZIndex=4; titleLbl.Parent=winFrame
@@ -971,19 +998,20 @@ local function buildGUI()
         p.Visible=false; p.Parent=contentArea; listLayout(p,6); padding(p,10); return p
     end
 
-    local offsetPage   = makePage()
-    local targetPage   = makePage()
-    local orbitPage    = makePage()
-    local flyPage      = makePage()
-    local noclipPage   = makePage()
-    local espPage      = makePage()
-    local settingsPage = makePage()
-    local pages        = {offsetPage, targetPage, orbitPage, flyPage, noclipPage, espPage, settingsPage}
+    local offsetPage       = makePage()
+    local targetPage       = makePage()
+    local orbitPage        = makePage()
+    local orbitTargetPage  = makePage()
+    local flyPage          = makePage()
+    local noclipPage       = makePage()
+    local espPage          = makePage()
+    local settingsPage     = makePage()
+    local pages        = {offsetPage, targetPage, orbitPage, orbitTargetPage, flyPage, noclipPage, espPage, settingsPage}
     local tabBtns      = {}
 
     -- Tab accent colors per tab
     local TAB_COLORS = {
-        T.accent, T.accent, T.red, T.blue, T.purple, T.yellow, T.sub
+        T.accent, T.accent, T.red, T.red, T.blue, T.purple, T.yellow, T.sub
     }
 
     local function switchTab(idx)
@@ -1023,7 +1051,22 @@ local function buildGUI()
         tw(resetBtn,{BackgroundColor3=T.accentD}); task.delay(0.35,function() tw(resetBtn,{BackgroundColor3=T.card}) end)
     end)
 
-    -- Random Direction toggle has moved to the Orbit tab
+    -- Stick to You toggle
+    sectionLabel(offsetPage,"FOLLOW MODE")
+    local stickCard, _setStickPill = makeToggleCard(
+        offsetPage,"📍  Stick to You","Spoof offset tracks your real position live",
+        state.stickEnabled,1,T.accent,
+        function(v)
+            state.stickEnabled = v
+            -- Re-capture base position whenever we disable stick so it freezes at current offset
+            if not v then
+                local char = LocalPlayer.Character
+                local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+                spoofBasePos = hrp and hrp.Position or Vector3.zero
+            end
+            saveAll()
+        end
+    )
 
     sectionLabel(offsetPage,"PRESETS")
     local builtRow=Instance.new("Frame"); builtRow.Size=UDim2.new(1,0,0,36); builtRow.BackgroundTransparency=1; builtRow.Parent=offsetPage
@@ -1263,6 +1306,93 @@ local function buildGUI()
     _randOrbitPill.Position=UDim2.new(1,-52,0.5,-11); _randOrbitPill.Parent=randOrbitCard
     randOrbitCard.MouseEnter:Connect(function() tw(randOrbitCard,{BackgroundColor3=T.cardH}) end)
     randOrbitCard.MouseLeave:Connect(function() tw(randOrbitCard,{BackgroundColor3=T.card}) end)
+
+    -- ════════════════════════════════════════════════════════════════════
+    --  ORBIT TARGETS PAGE  (separate from Spoof targets)
+    -- ════════════════════════════════════════════════════════════════════
+    sectionLabel(orbitTargetPage,"ORBIT TARGETS",0)
+
+    local orbitTargetInfoCard=Instance.new("Frame"); orbitTargetInfoCard.Size=UDim2.new(1,0,0,52); orbitTargetInfoCard.LayoutOrder=1
+    orbitTargetInfoCard.BackgroundColor3=Color3.fromRGB(55,18,18); orbitTargetInfoCard.BorderSizePixel=0; orbitTargetInfoCard.Parent=orbitTargetPage; corner(orbitTargetInfoCard,10)
+    local orbitTargetInfoLbl=Instance.new("TextLabel"); orbitTargetInfoLbl.Size=UDim2.new(1,-16,1,0); orbitTargetInfoLbl.Position=UDim2.new(0,12,0,0)
+    orbitTargetInfoLbl.BackgroundTransparency=1; orbitTargetInfoLbl.TextSize=10; orbitTargetInfoLbl.Font=Enum.Font.Gotham
+    orbitTargetInfoLbl.TextColor3=Color3.fromRGB(255,160,160); orbitTargetInfoLbl.TextXAlignment=Enum.TextXAlignment.Left
+    orbitTargetInfoLbl.TextWrapped=true
+    orbitTargetInfoLbl.Text="🔴  Choose which players the Orbit system affects.\nThis is separate from Position Spoof targets."
+    orbitTargetInfoLbl.Parent=orbitTargetInfoCard
+
+    local orbitTargetRowsList={}
+    local function rebuildOrbitTargets()
+        for _,r in pairs(orbitTargetRowsList) do r:Destroy() end; orbitTargetRowsList={}
+
+        -- Target All row
+        local taRow=Instance.new("Frame"); taRow.Size=UDim2.new(1,0,0,50); taRow.LayoutOrder=2
+        taRow.BackgroundColor3=T.card; taRow.BorderSizePixel=0; taRow.Parent=orbitTargetPage; corner(taRow,10)
+        stroke(taRow,state.targetAll and T.red or T.border,state.targetAll and 1.5 or 1); table.insert(orbitTargetRowsList,taRow)
+        local taIconF=Instance.new("Frame"); taIconF.Size=UDim2.new(0,38,0,38); taIconF.Position=UDim2.new(0,6,0.5,-19)
+        taIconF.BackgroundColor3=state.targetAll and Color3.fromRGB(55,18,18) or T.surface; taIconF.BorderSizePixel=0; taIconF.Parent=taRow; corner(taIconF,19)
+        local taIconL=Instance.new("TextLabel"); taIconL.Size=UDim2.new(1,0,1,0); taIconL.BackgroundTransparency=1; taIconL.Text="★"
+        taIconL.TextSize=16; taIconL.Font=Enum.Font.GothamBold; taIconL.TextColor3=state.targetAll and T.red or T.sub
+        taIconL.TextXAlignment=Enum.TextXAlignment.Center; taIconL.Parent=taIconF
+        local oTaLbl=Instance.new("TextLabel"); oTaLbl.Size=UDim2.new(1,-106,0,18); oTaLbl.Position=UDim2.new(0,52,0,7)
+        oTaLbl.BackgroundTransparency=1; oTaLbl.Text="Orbit All"; oTaLbl.TextSize=13; oTaLbl.Font=Enum.Font.GothamBold
+        oTaLbl.TextColor3=state.targetAll and T.text or T.sub; oTaLbl.TextXAlignment=Enum.TextXAlignment.Left; oTaLbl.Parent=taRow
+        local oTaDesc=Instance.new("TextLabel"); oTaDesc.Size=UDim2.new(1,-106,0,13); oTaDesc.Position=UDim2.new(0,52,0,26)
+        oTaDesc.BackgroundTransparency=1; oTaDesc.Text="Orbits every player in server"; oTaDesc.TextSize=10; oTaDesc.Font=Enum.Font.Gotham
+        oTaDesc.TextColor3=T.sub; oTaDesc.TextXAlignment=Enum.TextXAlignment.Left; oTaDesc.Parent=taRow
+        local oTaPill=Instance.new("Frame"); oTaPill.Size=UDim2.new(0,40,0,22); oTaPill.Position=UDim2.new(1,-48,0.5,-11)
+        oTaPill.BackgroundColor3=state.targetAll and T.red or T.border; oTaPill.BorderSizePixel=0; oTaPill.Parent=taRow; corner(oTaPill,11)
+        local oTaPT=Instance.new("Frame"); oTaPT.Size=UDim2.new(0,15,0,15)
+        oTaPT.Position=state.targetAll and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
+        oTaPT.BackgroundColor3=Color3.fromRGB(240,240,240); oTaPT.BorderSizePixel=0; oTaPT.Parent=oTaPill; corner(oTaPT,8)
+        local oTaClick=Instance.new("TextButton"); oTaClick.Size=UDim2.new(1,0,1,0); oTaClick.BackgroundTransparency=1; oTaClick.Text=""; oTaClick.Parent=taRow
+        -- Note: orbit "target all" reuses state.targetAll but driven from this page too
+        oTaClick.MouseButton1Click:Connect(function()
+            state.targetAll=not state.targetAll
+            rebuildOrbitTargets()
+        end)
+        taRow.MouseEnter:Connect(function() tw(taRow,{BackgroundColor3=T.cardH}) end)
+        taRow.MouseLeave:Connect(function() tw(taRow,{BackgroundColor3=T.card}) end)
+
+        -- Per-player rows
+        for idx, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                local active = orbitTargeted[p.Name] == true
+                local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,54); row.LayoutOrder=idx+2
+                row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=orbitTargetPage; corner(row,10)
+                stroke(row,active and Color3.fromRGB(80,18,18) or T.border,active and 1.5 or 1); table.insert(orbitTargetRowsList,row)
+                local avaCircle=Instance.new("Frame"); avaCircle.Size=UDim2.new(0,40,0,40); avaCircle.Position=UDim2.new(0,7,0.5,-20)
+                avaCircle.BackgroundColor3=T.surface; avaCircle.BorderSizePixel=0; avaCircle.ClipsDescendants=true; avaCircle.Parent=row; corner(avaCircle,20)
+                if active then stroke(avaCircle,T.red,2) end
+                local avaImg=Instance.new("ImageLabel"); avaImg.Size=UDim2.new(1,0,1,0); avaImg.BackgroundTransparency=1; avaImg.Image=""; avaImg.Parent=avaCircle
+                local uid=p.UserId; task.spawn(function()
+                    local ok,img=pcall(function() return Players:GetUserThumbnailAsync(uid,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size48x48) end)
+                    if ok and img then avaImg.Image=img end
+                end)
+                local dispN=Instance.new("TextLabel"); dispN.Size=UDim2.new(1,-106,0,18); dispN.Position=UDim2.new(0,55,0,9)
+                dispN.BackgroundTransparency=1; dispN.Text=p.DisplayName; dispN.TextSize=13; dispN.Font=Enum.Font.GothamBold
+                dispN.TextColor3=active and T.text or T.sub; dispN.TextXAlignment=Enum.TextXAlignment.Left; dispN.TextTruncate=Enum.TextTruncate.AtEnd; dispN.Parent=row
+                local userN=Instance.new("TextLabel"); userN.Size=UDim2.new(1,-106,0,13); userN.Position=UDim2.new(0,55,0,29)
+                userN.BackgroundTransparency=1; userN.Text="@"..p.Name; userN.TextSize=10; userN.Font=Enum.Font.Gotham
+                userN.TextColor3=T.sub; userN.TextXAlignment=Enum.TextXAlignment.Left; userN.TextTruncate=Enum.TextTruncate.AtEnd; userN.Parent=row
+                local pPill=Instance.new("Frame"); pPill.Size=UDim2.new(0,40,0,22); pPill.Position=UDim2.new(1,-48,0.5,-11)
+                pPill.BackgroundColor3=active and T.red or T.border; pPill.BorderSizePixel=0; pPill.Parent=row; corner(pPill,11)
+                local pPT=Instance.new("Frame"); pPT.Size=UDim2.new(0,15,0,15)
+                pPT.Position=active and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
+                pPT.BackgroundColor3=Color3.fromRGB(240,240,240); pPT.BorderSizePixel=0; pPT.Parent=pPill; corner(pPT,8)
+                local clickable=Instance.new("TextButton"); clickable.Size=UDim2.new(1,0,1,0); clickable.BackgroundTransparency=1; clickable.Text=""; clickable.Parent=row
+                local pName=p.Name
+                clickable.MouseButton1Click:Connect(function()
+                    orbitTargeted[pName]=not orbitTargeted[pName]
+                    rebuildOrbitTargets()
+                end)
+                row.MouseEnter:Connect(function() tw(row,{BackgroundColor3=T.cardH}) end)
+                row.MouseLeave:Connect(function() tw(row,{BackgroundColor3=T.card}) end)
+            end
+        end
+    end
+    Players.PlayerAdded:Connect(function() rebuildOrbitTargets() end)
+    Players.PlayerRemoving:Connect(function(p) orbitTargeted[p.Name]=nil; rebuildOrbitTargets() end)
 
     -- Restore orbit on respawn
     LocalPlayer.CharacterAdded:Connect(function()
@@ -1663,7 +1793,7 @@ local function buildGUI()
     end)
 
     -- ── Init ──────────────────────────────────────────────────────────
-    switchTab(1); rebuildTargets(); updateStatus(); refreshAllESP()
+    switchTab(1); rebuildTargets(); rebuildOrbitTargets(); updateStatus(); refreshAllESP()
 end
 
 -- ════════════════════════════════════════════════════════════════════════════
