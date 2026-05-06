@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
---  Fake Position Spoof  ·  Petal UI  ·  v13.0
+--  Fake Position Spoof  ·  Petal UI  ·  v12.0
 --  ✦ Title-bar drag only
 --  ✦ X / Y / Z slider + inline type-to-edit  (range ±150,000)
 --  ✦ Per-slider reset buttons on every property
@@ -179,7 +179,7 @@ local function serSettings()
         tostring(state.orbitReverse),
         tostring(state.aimbotEnabled), state.aimbotFOV, state.aimbotSmooth, state.aimbotBone,
         tostring(state.aimbotHoldRMB),
-        tostring(state.triggerEnabled), state.triggerDelay, state.triggerFOV
+        tostring(state.triggerEnabled), state.triggerDelay, state.triggerFOV,
     )
 end
 
@@ -1099,143 +1099,6 @@ local function buildGUI()
     buildFOVGui(gui)
     if not state.fovEnabled then destroyFOVGui() end
 
-    -- ══════════════════════════════════════════════════════════════
-    --  TOAST NOTIFICATION SYSTEM
-    -- ══════════════════════════════════════════════════════════════
-    local toastContainer = Instance.new("Frame")
-    toastContainer.Name            = "ToastContainer"
-    toastContainer.Size            = UDim2.new(0, 272, 1, -32)
-    toastContainer.Position        = UDim2.new(1, -286, 0, 16)
-    toastContainer.BackgroundTransparency = 1
-    toastContainer.ZIndex          = 200
-    toastContainer.ClipsDescendants = false
-    toastContainer.Parent          = gui
-    local toastLayout = Instance.new("UIListLayout")
-    toastLayout.Padding            = UDim.new(0, 8)
-    toastLayout.SortOrder          = Enum.SortOrder.LayoutOrder
-    toastLayout.VerticalAlignment  = Enum.VerticalAlignment.Bottom
-    toastLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-    toastLayout.Parent             = toastContainer
-
-    local toastSeq = 0
-    local function notify(title, msg, col, icon)
-        toastSeq = toastSeq + 1
-        local c  = col  or T.accent
-        local ic = icon or "✦"
-
-        local toast = Instance.new("Frame")
-        toast.Name                  = "Toast_"..toastSeq
-        toast.LayoutOrder           = -toastSeq
-        toast.Size                  = UDim2.new(1, 0, 0, 60)
-        toast.BackgroundColor3      = T.surface
-        toast.BorderSizePixel       = 0
-        toast.ClipsDescendants      = true
-        toast.ZIndex                = 200
-        toast.Parent                = toastContainer
-        corner(toast, 14)
-        local tStroke = Instance.new("UIStroke")
-        tStroke.Color     = c
-        tStroke.Thickness = 1.5
-        tStroke.Parent    = toast
-
-        -- Left accent bar
-        local bar = Instance.new("Frame")
-        bar.Size             = UDim2.new(0, 3, 1, 0)
-        bar.BackgroundColor3 = c
-        bar.BorderSizePixel  = 0
-        bar.ZIndex           = 201
-        bar.Parent           = toast
-        corner(bar, 2)
-
-        -- Icon badge
-        local iconBadge = Instance.new("TextLabel")
-        iconBadge.Size               = UDim2.new(0, 30, 0, 30)
-        iconBadge.Position           = UDim2.new(0, 12, 0.5, -15)
-        iconBadge.BackgroundColor3   = Color3.fromRGB(
-            math.clamp(math.floor(c.R * 255 * 0.25 + 12), 0, 255),
-            math.clamp(math.floor(c.G * 255 * 0.25 + 12), 0, 255),
-            math.clamp(math.floor(c.B * 255 * 0.25 + 12), 0, 255)
-        )
-        iconBadge.BorderSizePixel    = 0
-        iconBadge.Text               = ic
-        iconBadge.TextSize           = 15
-        iconBadge.Font               = Enum.Font.ArialBold
-        iconBadge.TextColor3         = c
-        iconBadge.TextXAlignment     = Enum.TextXAlignment.Center
-        iconBadge.ZIndex             = 201
-        iconBadge.Parent             = toast
-        corner(iconBadge, 9)
-
-        -- Title
-        local titleT = Instance.new("TextLabel")
-        titleT.Size              = UDim2.new(1, -54, 0, 20)
-        titleT.Position          = UDim2.new(0, 50, 0, 10)
-        titleT.BackgroundTransparency = 1
-        titleT.Text              = title
-        titleT.TextSize          = 12
-        titleT.Font              = Enum.Font.ArialBold
-        titleT.TextColor3        = T.text
-        titleT.TextXAlignment    = Enum.TextXAlignment.Left
-        titleT.TextTruncate      = Enum.TextTruncate.AtEnd
-        titleT.ZIndex            = 201
-        titleT.Parent            = toast
-
-        -- Message
-        local msgT = Instance.new("TextLabel")
-        msgT.Size              = UDim2.new(1, -54, 0, 16)
-        msgT.Position          = UDim2.new(0, 50, 0, 33)
-        msgT.BackgroundTransparency = 1
-        msgT.Text              = msg
-        msgT.TextSize          = 10
-        msgT.Font              = Enum.Font.Arial
-        msgT.TextColor3        = T.sub
-        msgT.TextXAlignment    = Enum.TextXAlignment.Left
-        msgT.TextTruncate      = Enum.TextTruncate.AtEnd
-        msgT.ZIndex            = 201
-        msgT.Parent            = toast
-
-        -- Progress bar (drains over 3s)
-        local progBG = Instance.new("Frame")
-        progBG.Size             = UDim2.new(1, -6, 0, 2)
-        progBG.Position         = UDim2.new(0, 3, 1, -3)
-        progBG.BackgroundColor3 = Color3.fromRGB(40, 30, 45)
-        progBG.BorderSizePixel  = 0
-        progBG.ZIndex           = 201
-        progBG.Parent           = toast
-        corner(progBG, 1)
-        local progFill = Instance.new("Frame")
-        progFill.Size             = UDim2.new(1, 0, 1, 0)
-        progFill.BackgroundColor3 = c
-        progFill.BorderSizePixel  = 0
-        progFill.ZIndex           = 202
-        progFill.Parent           = progBG
-        corner(progFill, 1)
-
-        -- Slide in from right
-        toast.Position = UDim2.new(1, 60, 0, 0)
-        TweenService:Create(toast,
-            TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-            {Position = UDim2.new(1, 0, 0, 0)}):Play()
-
-        -- Progress drain tween
-        TweenService:Create(progFill,
-            TweenInfo.new(3.0, Enum.EasingStyle.Linear),
-            {Size = UDim2.new(0, 0, 1, 0)}):Play()
-
-        -- Dismiss after 3s
-        task.delay(3.0, function()
-            if not toast or not toast.Parent then return end
-            local fadeOut = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-            TweenService:Create(toast,  fadeOut, {Position = UDim2.new(1, 60, 0, 0), BackgroundTransparency = 1}):Play()
-            TweenService:Create(tStroke, TweenInfo.new(0.22), {Transparency = 1}):Play()
-            TweenService:Create(titleT, fadeOut, {TextTransparency = 1}):Play()
-            TweenService:Create(msgT,   fadeOut, {TextTransparency = 1}):Play()
-            task.delay(0.25, function()
-                if toast and toast.Parent then toast:Destroy() end
-            end)
-        end)
-    end
-
     local W, FH, MH = 480, 540, 44
     local minimized=false; local guiVisible=true
 
@@ -1246,28 +1109,7 @@ local function buildGUI()
     local winFrame=Instance.new("Frame"); winFrame.Size=UDim2.new(0,W,0,FH)
     winFrame.Position=UDim2.new(0.5,-W/2,0.5,-FH/2); winFrame.BackgroundColor3=T.bg
     winFrame.BorderSizePixel=0; winFrame.Active=true; winFrame.Draggable=false
-    winFrame.ClipsDescendants=true; winFrame.Parent=gui; corner(winFrame,20)
-
-    -- Pulsing glow border
-    local glowStroke = Instance.new("UIStroke")
-    glowStroke.Color     = T.border
-    glowStroke.Thickness = 1
-    glowStroke.Parent    = winFrame
-    local _glowConn
-    _glowConn = RunService.Heartbeat:Connect(function()
-        if not winFrame or not winFrame.Parent then _glowConn:Disconnect(); return end
-        local pulse = 0.5 + 0.5 * math.sin(tick() * 1.6)
-        -- Interpolate border → accent
-        local bR, bG, bB = T.border.R * 255, T.border.G * 255, T.border.B * 255
-        local aR, aG, aB = T.accent.R * 255, T.accent.G * 255, T.accent.B * 255
-        local alpha = pulse * 0.55
-        glowStroke.Color = Color3.fromRGB(
-            math.floor(bR + (aR - bR) * alpha),
-            math.floor(bG + (aG - bG) * alpha),
-            math.floor(bB + (aB - bB) * alpha)
-        )
-        glowStroke.Thickness = 1 + pulse * 1.8
-    end)
+    winFrame.ClipsDescendants=true; winFrame.Parent=gui; corner(winFrame,20); stroke(winFrame,T.border)
 
     local strip=Instance.new("Frame"); strip.Size=UDim2.new(0,3,0,20); strip.Position=UDim2.new(0,0,0,12)
     strip.BackgroundColor3=T.accent; strip.BorderSizePixel=0; strip.Parent=winFrame; corner(strip,2)
@@ -1636,7 +1478,6 @@ local function buildGUI()
         function(v)
             state.orbitEnabled=v
             if v then startOrbit() else stopOrbit() end
-            notify(v and "Orbit Enabled" or "Orbit Disabled", v and "targets are now orbiting you" or "orbit engine stopped", T.red, "🔴")
             saveAll()
         end
     )
@@ -1828,7 +1669,6 @@ local function buildGUI()
         function(v)
             state.flyEnabled=v
             if v then startFly() else stopFly() end
-            notify(v and "Fly Enabled" or "Fly Disabled", v and "WASD + Space to fly" or "fly engine stopped", T.blue, "✈")
             saveAll()
         end
     )
@@ -1863,7 +1703,6 @@ local function buildGUI()
         function(v)
             state.noclipEnabled=v
             if v then startNoclip() else stopNoclip() end
-            notify(v and "Noclip Enabled" or "Noclip Disabled", v and "passing through walls" or "collision restored", T.purple, "👻")
             saveAll()
         end
     )
@@ -1878,7 +1717,6 @@ local function buildGUI()
     comboBtn.MouseButton1Click:Connect(function()
         state.flyEnabled=true; state.noclipEnabled=true
         startFly(); startNoclip(); saveAll()
-        notify("Ghost Mode Activated", "fly + noclip running together", T.purple, "⚡")
         tw(comboBtn,{BackgroundColor3=T.purpleD}); task.delay(0.4,function() tw(comboBtn,{BackgroundColor3=Color3.fromRGB(50,30,70)}) end)
     end)
 
@@ -1892,7 +1730,6 @@ local function buildGUI()
     disableGhostBtn.MouseButton1Click:Connect(function()
         state.flyEnabled=false; state.noclipEnabled=false
         stopFly(); stopNoclip(); saveAll()
-        notify("Ghost Mode Disabled", "fly + noclip both stopped", T.red, "✕")
         tw(disableGhostBtn,{BackgroundColor3=T.red})
         task.delay(0.4,function() tw(disableGhostBtn,{BackgroundColor3=Color3.fromRGB(60,20,20)}) end)
     end)
@@ -1917,7 +1754,6 @@ local function buildGUI()
         state.espEnabled=not state.espEnabled; local t=0.15
         TweenService:Create(espMasterPill,TweenInfo.new(t),{BackgroundColor3=state.espEnabled and T.accent or T.border}):Play()
         TweenService:Create(espMasterKnob,TweenInfo.new(t),{Position=state.espEnabled and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)}):Play()
-        notify(state.espEnabled and "ESP Enabled" or "ESP Disabled", state.espEnabled and "player highlights active" or "esp overlays removed", T.accent, "👁")
         refreshAllESP(); saveAll()
     end)
 
@@ -1966,7 +1802,6 @@ local function buildGUI()
         TweenService:Create(fovMasterPill,TweenInfo.new(t),{BackgroundColor3=state.fovEnabled and T.yellow or T.border}):Play()
         TweenService:Create(fovMasterKnob,TweenInfo.new(t),{Position=state.fovEnabled and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)}):Play()
         if state.fovEnabled then buildFOVGui(gui) else destroyFOVGui() end
-        notify(state.fovEnabled and "FOV Circle On" or "FOV Circle Off", state.fovEnabled and "aimbot range ring visible" or "fov overlay hidden", T.yellow, "⭕")
         saveAll()
     end)
 
@@ -2019,7 +1854,6 @@ local function buildGUI()
         function(v)
             state.aimbotEnabled = v
             if v then startAimbot() else stopAimbot() end
-            notify(v and "Aimbot Enabled" or "Aimbot Disabled", v and "locking on to nearest target" or "aimbot engine stopped", T.blue, "🎯")
             saveAll()
         end
     )
@@ -2095,7 +1929,6 @@ local function buildGUI()
         function(v)
             state.triggerEnabled = v
             if v then startTriggerbot() else stopTriggerbot() end
-            notify(v and "Triggerbot Enabled" or "Triggerbot Disabled", v and "auto-firing on crosshair overlap" or "triggerbot stopped", T.orange, "🔫")
             saveAll()
         end
     )
@@ -2149,7 +1982,6 @@ local function buildGUI()
         if inp.UserInputType~=Enum.UserInputType.Keyboard then return end
         if inp.KeyCode==state.spoofKey then
             state.enabled=not state.enabled; if state.enabled then startSpoof() end; updateStatus()
-            notify(state.enabled and "Spoof Activated" or "Spoof Deactivated", state.enabled and "fake position broadcasting" or "position broadcast stopped", state.enabled and T.accent or T.red, state.enabled and "📡" or "⛔")
         elseif inp.KeyCode==state.guiKey then
             setGuiVisible(not guiVisible)
         end
