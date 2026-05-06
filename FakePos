@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
---  Fake Position Spoof  ·  Petal UI  ·  v12.0
+--  Fake Position Spoof  ·  Matcha UI  ·  v11.0
 --  ✦ Title-bar drag only
 --  ✦ X / Y / Z slider + inline type-to-edit  (range ±150,000)
 --  ✦ Per-slider reset buttons on every property
@@ -15,7 +15,7 @@
 --  ✦ Persistent spoofKey + guiKey + esp settings
 --  ✦ Unified save file with settings + presets blocks
 --  ✦ Faraway + Origin presets
---  ✦ Player search on Targets + OrbTargets tabs          [NEW v8]
+--  ✦ Player search on Targets + OrbTargets tabs          [NEW v11]
 -- ════════════════════════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -107,6 +107,14 @@ local state = {
     triggerEnabled = false,
     triggerDelay   = 80,
     triggerFOV     = 60,
+    -- Ragebot
+    ragebotEnabled    = false,
+    ragebotHitchance  = 100,
+    ragebotBone       = "Head",
+    ragebotTargetMode = "Closest",
+    ragebotDoubleshot = false,
+    ragebotPrediction = false,
+    ragebotDelay      = 80,
     -- FOV Visualizer
     fovEnabled  = false,
     fovRange    = 60,
@@ -120,6 +128,8 @@ local orbitConn        = nil
 local flyConn          = nil
 local noclipConn       = nil
 local aimbotConn       = nil
+local ragebotConn      = nil
+local ragebotFiring    = false
 local triggerConn      = nil
 local triggerFiring    = false
 local guiRef           = nil
@@ -128,33 +138,31 @@ local guiRef           = nil
 --  THEME
 -- ════════════════════════════════════════════════════════════════════════════
 local T = {
-    bg      = Color3.fromRGB( 30,  20,  28),   -- deep plum background
-    surface = Color3.fromRGB( 42,  28,  40),   -- slightly lighter surface
-    card    = Color3.fromRGB( 52,  35,  50),   -- card background
-    cardH   = Color3.fromRGB( 62,  43,  60),   -- hovered card
-    border  = Color3.fromRGB( 90,  60,  85),   -- soft border
-    accent  = Color3.fromRGB(255, 160, 200),   -- main pink
-    accentH = Color3.fromRGB(255, 185, 215),   -- lighter pink hover
-    accentD = Color3.fromRGB(180,  80, 130),   -- dark pink
-    text    = Color3.fromRGB(255, 230, 245),   -- near-white with pink tint
-    sub     = Color3.fromRGB(190, 140, 175),   -- muted pink-grey
-    red     = Color3.fromRGB(255, 100, 130),   -- soft red-pink
-    redH    = Color3.fromRGB(255, 130, 155),
-    yellow  = Color3.fromRGB(255, 210, 150),   -- warm peach
-    inputBG = Color3.fromRGB( 60,  40,  58),
-    hpGreen = Color3.fromRGB(160, 230, 180),
-    hpRed   = Color3.fromRGB(255, 120, 140),
-    blue    = Color3.fromRGB(180, 160, 255),   -- lavender
-    blueD   = Color3.fromRGB( 90,  70, 160),
-    purple  = Color3.fromRGB(210, 150, 255),   -- soft lilac
-    purpleD = Color3.fromRGB(110,  60, 160),
-    pink    = Color3.fromRGB(255, 160, 200),   -- alias for accent
-    pinkD   = Color3.fromRGB(160,  70, 110),
-    orange  = Color3.fromRGB(255, 190, 140),
-    orangeD = Color3.fromRGB(140,  80,  40),
-    rage    = Color3.fromRGB(255, 100, 130),
-    rageD   = Color3.fromRGB( 80,  20,  40),
-    rageH   = Color3.fromRGB(255, 140, 160),
+    bg      = Color3.fromRGB(13,  13,  13),
+    surface = Color3.fromRGB(19,  19,  19),
+    card    = Color3.fromRGB(25,  25,  25),
+    cardH   = Color3.fromRGB(31,  31,  31),
+    border  = Color3.fromRGB(40,  40,  40),
+    accent  = Color3.fromRGB(122, 186, 136),
+    accentH = Color3.fromRGB(150, 210, 163),
+    accentD = Color3.fromRGB(68,  118,  80),
+    text    = Color3.fromRGB(225, 225, 225),
+    sub     = Color3.fromRGB(115, 115, 115),
+    red     = Color3.fromRGB(190,  60,  60),
+    redH    = Color3.fromRGB(218,  82,  82),
+    yellow  = Color3.fromRGB(215, 185,  55),
+    inputBG = Color3.fromRGB(35,  35,  35),
+    hpGreen = Color3.fromRGB(90,  200, 110),
+    hpRed   = Color3.fromRGB(200,  70,  70),
+    blue    = Color3.fromRGB(80,  148, 228),
+    blueD   = Color3.fromRGB(40,   80, 140),
+    purple  = Color3.fromRGB(160, 100, 220),
+    purpleD = Color3.fromRGB(80,   50, 120),
+    orange  = Color3.fromRGB(220, 140,  60),
+    orangeD = Color3.fromRGB( 80,  40,  10),
+    rage    = Color3.fromRGB(210,  40,  40),
+    rageD   = Color3.fromRGB( 50,  10,  10),
+    rageH   = Color3.fromRGB(240,  70,  70),
 }
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -166,7 +174,7 @@ end
 
 local function serSettings()
     return string.format(
-        '{"spoofKey":"%s","guiKey":"%s","espEnabled":%s,"espR":%d,"espG":%d,"espB":%d,"espBox":%s,"espName":%s,"espHealth":%s,"espDist":%s,"espTracer":%s,"randomDir":%s,"flySpeed":%d,"flyHeight":%d,"fovEnabled":%s,"fovRange":%d,"orbitSpeed":%d,"orbitDistance":%d,"orbitHeight":%d,"orbitReverse":%s,"aimbotEnabled":%s,"aimbotFOV":%d,"aimbotSmooth":%d,"aimbotBone":"%s","aimbotHoldRMB":%s,"triggerEnabled":%s,"triggerDelay":%d,"triggerFOV":%d}',
+        '{"spoofKey":"%s","guiKey":"%s","espEnabled":%s,"espR":%d,"espG":%d,"espB":%d,"espBox":%s,"espName":%s,"espHealth":%s,"espDist":%s,"espTracer":%s,"randomDir":%s,"flySpeed":%d,"flyHeight":%d,"fovEnabled":%s,"fovRange":%d,"orbitSpeed":%d,"orbitDistance":%d,"orbitHeight":%d,"orbitReverse":%s,"aimbotEnabled":%s,"aimbotFOV":%d,"aimbotSmooth":%d,"aimbotBone":"%s","aimbotHoldRMB":%s,"triggerEnabled":%s,"triggerDelay":%d,"triggerFOV":%d,"ragebotEnabled":%s,"ragebotHitchance":%d,"ragebotBone":"%s","ragebotTargetMode":"%s","ragebotDoubleshot":%s,"ragebotPrediction":%s,"ragebotDelay":%d}',
         state.spoofKey.Name, state.guiKey.Name,
         tostring(state.espEnabled),
         state.espR, state.espG, state.espB,
@@ -180,6 +188,9 @@ local function serSettings()
         tostring(state.aimbotEnabled), state.aimbotFOV, state.aimbotSmooth, state.aimbotBone,
         tostring(state.aimbotHoldRMB),
         tostring(state.triggerEnabled), state.triggerDelay, state.triggerFOV,
+        tostring(state.ragebotEnabled), state.ragebotHitchance, state.ragebotBone,
+        state.ragebotTargetMode, tostring(state.ragebotDoubleshot),
+        tostring(state.ragebotPrediction), state.ragebotDelay
     )
 end
 
@@ -634,12 +645,12 @@ local function buildESP(plr)
             local nc=Instance.new("UICorner"); nc.CornerRadius=UDim.new(0,4); nc.Parent=nameRow
             local dispLbl=Instance.new("TextLabel"); dispLbl.Size=UDim2.new(1,-8,1,0)
             dispLbl.Position=UDim2.new(0,4,0,0); dispLbl.BackgroundTransparency=1
-            dispLbl.Text=plr.DisplayName; dispLbl.TextSize=12; dispLbl.Font=Enum.Font.ArialBold
+            dispLbl.Text=plr.DisplayName; dispLbl.TextSize=12; dispLbl.Font=Enum.Font.GothamBold
             dispLbl.TextColor3=col; dispLbl.TextXAlignment=Enum.TextXAlignment.Center
             dispLbl.TextTruncate=Enum.TextTruncate.AtEnd; dispLbl.Parent=nameRow
             local userLbl=Instance.new("TextLabel"); userLbl.Size=UDim2.new(1,-8,0,12)
             userLbl.Position=UDim2.new(0,4,0,20); userLbl.BackgroundTransparency=1
-            userLbl.Text="@"..plr.Name; userLbl.TextSize=9; userLbl.Font=Enum.Font.Arial
+            userLbl.Text="@"..plr.Name; userLbl.TextSize=9; userLbl.Font=Enum.Font.Gotham
             userLbl.TextColor3=Color3.fromRGB(180,180,180); userLbl.TextXAlignment=Enum.TextXAlignment.Center
             userLbl.Parent=bgFrame
         end
@@ -657,7 +668,7 @@ local function buildESP(plr)
         if state.espDist then
             local distLbl=Instance.new("TextLabel"); distLbl.Size=UDim2.new(1,0,0,12)
             distLbl.Position=UDim2.new(0,0,0,44); distLbl.BackgroundTransparency=1
-            distLbl.Text="0 studs"; distLbl.TextSize=9; distLbl.Font=Enum.Font.Arial
+            distLbl.Text="0 studs"; distLbl.TextSize=9; distLbl.Font=Enum.Font.Gotham
             distLbl.TextColor3=Color3.fromRGB(160,160,160); distLbl.TextXAlignment=Enum.TextXAlignment.Center
             distLbl.Parent=bgFrame; entry.distLbl=distLbl; entry.hrp=hrp
         end
@@ -716,8 +727,7 @@ Players.PlayerRemoving:Connect(function(plr)
 end)
 
 -- ════════════════════════════════════════════════════════════════════════════
---  AIMBOT ENGINE  (server-sided: moves HRP CFrame server-side so other
---                 clients see the head movement too)
+--  AIMBOT ENGINE
 -- ════════════════════════════════════════════════════════════════════════════
 local function stopAimbot()
     if aimbotConn then aimbotConn:Disconnect(); aimbotConn = nil end
@@ -730,7 +740,6 @@ local function startAimbot()
         if state.aimbotHoldRMB then
             if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
         end
-
         local cam    = workspace.CurrentCamera
         local target = getNearestTarget(state.aimbotFOV, state.aimbotBone)
         if not target or not target.Character then return end
@@ -738,46 +747,113 @@ local function startAimbot()
                   or target.Character:FindFirstChild("Head")
                   or target.Character:FindFirstChild("HumanoidRootPart")
         if not bone then return end
+        local smooth = math.max(1, state.aimbotSmooth)
+        local newCF  = CFrame.new(cam.CFrame.Position, bone.Position)
+        cam.CFrame   = cam.CFrame:Lerp(newCF, 1 / smooth)
+    end)
+end
 
-        local smooth  = math.max(1, state.aimbotSmooth)
-        local newDir  = CFrame.new(cam.CFrame.Position, bone.Position)
-        local lerpedCF = cam.CFrame:Lerp(newDir, 1 / smooth)
+-- ════════════════════════════════════════════════════════════════════════════
+--  RAGEBOT ENGINE
+-- ════════════════════════════════════════════════════════════════════════════
 
-        -- ── Client camera (always) ───────────────────────────────────────
-        cam.CFrame = lerpedCF
+-- Target-selection helpers
+local function getRagebotTarget()
+    local mode = state.ragebotTargetMode
+    local cam  = workspace.CurrentCamera
+    local camPos = cam.CFrame.Position
 
-        -- ── Server-side body movement ────────────────────────────────────
-        -- We replicate by directly setting the LocalPlayer's HRP CFrame,
-        -- which the Roblox replication system sends to other clients.
-        -- We preserve XZ position so the player doesn't teleport; only
-        -- the facing direction is updated.
-        local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            local lookTarget = bone.Position
-            local origin     = hrp.Position
-            -- Keep feet on ground — only rotate yaw toward target
-            local flat  = Vector3.new(lookTarget.X, origin.Y, lookTarget.Z)
-            local newHRP = CFrame.new(origin, flat)
-            -- Lerp only the rotation so movement isn't jittery
-            hrp.CFrame = hrp.CFrame:Lerp(newHRP, 1 / smooth)
-
-            -- Also drive the Neck Motor6D so the head visually points at
-            -- the vertical angle too (visible server-side on other clients)
-            local neck = char:FindFirstChild("Neck", true)
-                      or (char:FindFirstChild("Head") and
-                          char:FindFirstChild("Head"):FindFirstChildOfClass("Motor6D"))
-            if neck and neck:IsA("Motor6D") then
-                local headPos  = (char:FindFirstChild("Head") or hrp).Position
-                local tiltCF   = CFrame.new(headPos, lookTarget)
-                -- C0 offset keeps head attached; we only patch the look angle
-                local localDir = neck.Part0.CFrame:ToObjectSpace(tiltCF)
-                neck.C0 = neck.C0:Lerp(
-                    CFrame.new(neck.C0.Position) * CFrame.Angles(0, localDir:ToEulerAnglesYXZ()),
-                    1 / smooth
-                )
+    local candidates = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local bone = p.Character:FindFirstChild(state.ragebotBone)
+                          or p.Character:FindFirstChild("Head")
+                          or p.Character:FindFirstChild("HumanoidRootPart")
+                if bone then
+                    local sp, onScreen = cam:WorldToViewportPoint(bone.Position)
+                    if onScreen then
+                        candidates[#candidates+1] = {
+                            player  = p,
+                            bone    = bone,
+                            hp      = hum.Health,
+                            dist    = (camPos - bone.Position).Magnitude,
+                            screenDist = (Vector2.new(sp.X, sp.Y) - Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)).Magnitude,
+                        }
+                    end
+                end
             end
         end
+    end
+
+    if #candidates == 0 then return nil end
+
+    if mode == "Closest" then
+        table.sort(candidates, function(a,b) return a.screenDist < b.screenDist end)
+    elseif mode == "Lowest HP" then
+        table.sort(candidates, function(a,b) return a.hp < b.hp end)
+    elseif mode == "Highest HP" then
+        table.sort(candidates, function(a,b) return a.hp > b.hp end)
+    elseif mode == "Random" then
+        local i = math.random(1, #candidates)
+        return candidates[i].player, candidates[i].bone
+    elseif mode == "Nearest Dist" then
+        table.sort(candidates, function(a,b) return a.dist < b.dist end)
+    end
+
+    return candidates[1].player, candidates[1].bone
+end
+
+local function stopRagebot()
+    if ragebotConn then ragebotConn:Disconnect(); ragebotConn = nil end
+    ragebotFiring = false
+end
+
+local function startRagebot()
+    stopRagebot()
+    ragebotConn = RunService.Heartbeat:Connect(function()
+        if not state.ragebotEnabled or ragebotFiring then return end
+
+        -- Hitchance gate
+        if math.random(1, 100) > state.ragebotHitchance then return end
+
+        local cam = workspace.CurrentCamera
+        local target, bone = getRagebotTarget()
+        if not target or not bone then return end
+
+        -- Velocity prediction: offset aim by estimated travel time
+        local bonePos = bone.Position
+        if state.ragebotPrediction then
+            local hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local vel = hrp.AssemblyLinearVelocity or Vector3.zero
+                local dist = (cam.CFrame.Position - bonePos).Magnitude
+                local travelTime = dist / 300  -- ~300 stud/s bullet approx
+                bonePos = bonePos + vel * travelTime
+            end
+        end
+
+        -- Snap camera to target
+        local origCF = cam.CFrame
+        cam.CFrame = CFrame.new(origCF.Position, bonePos)
+
+        ragebotFiring = true
+        task.spawn(function()
+            -- First shot
+            safeFire()
+
+            -- Doubleshot: fire a second time after a short gap
+            if state.ragebotDoubleshot then
+                task.wait(0.05)
+                safeFire()
+            end
+
+            -- Hold delay then allow next shot
+            task.wait(math.max(0.016, state.ragebotDelay / 1000))
+            cam.CFrame = origCF
+            ragebotFiring = false
+        end)
     end)
 end
 
@@ -838,7 +914,7 @@ end
 --  CLEANUP
 -- ════════════════════════════════════════════════════════════════════════════
 local function cleanup()
-    stopSpoof(); stopOrbit(); stopFly(); stopNoclip(); stopAimbot(); stopTriggerbot(); destroyFOVGui()
+    stopSpoof(); stopOrbit(); stopFly(); stopNoclip(); stopAimbot(); stopRagebot(); stopTriggerbot(); destroyFOVGui()
     for name in pairs(espObjects) do removeESP(name) end
     if espFolder and espFolder.Parent then espFolder:Destroy() end
     if guiRef then guiRef:Destroy(); guiRef = nil end
@@ -863,7 +939,7 @@ local function padding(p, a, b)
 end
 local function sectionLabel(parent, text, order)
     local l=Instance.new("TextLabel"); l.Size=UDim2.new(1,0,0,14); l.BackgroundTransparency=1
-    l.Text=text; l.TextSize=10; l.Font=Enum.Font.ArialBold; l.TextColor3=T.sub
+    l.Text=text; l.TextSize=10; l.Font=Enum.Font.GothamBold; l.TextColor3=T.sub
     l.TextXAlignment=Enum.TextXAlignment.Left; l.LayoutOrder=order or 0; l.Parent=parent
 end
 
@@ -929,21 +1005,21 @@ local function makeSlider(parent, lText, minV, maxV, defV, onChange, accentColor
     hdr.BackgroundTransparency=1; hdr.Parent=wrap
 
     local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(0.45,0,1,0); lbl.BackgroundTransparency=1
-    lbl.Text=lText; lbl.TextSize=11; lbl.Font=Enum.Font.ArialBold; lbl.TextColor3=T.sub
+    lbl.Text=lText; lbl.TextSize=11; lbl.Font=Enum.Font.GothamBold; lbl.TextColor3=T.sub
     lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=hdr
 
     local valBox=Instance.new("TextBox"); valBox.Size=UDim2.new(0.35,-2,1,2); valBox.Position=UDim2.new(0.45,2,0,-1)
     valBox.BackgroundColor3=T.inputBG; valBox.BorderSizePixel=0; valBox.Text=tostring(defV)
     valBox.PlaceholderText="value"; valBox.PlaceholderColor3=T.sub; valBox.TextColor3=ac
-    valBox.TextSize=12; valBox.Font=Enum.Font.ArialBold; valBox.TextXAlignment=Enum.TextXAlignment.Right
-    valBox.ClearTextOnFocus=false; valBox.ZIndex=6; valBox.Parent=hdr; corner(valBox,8); stroke(valBox,acd,1)
+    valBox.TextSize=12; valBox.Font=Enum.Font.GothamBold; valBox.TextXAlignment=Enum.TextXAlignment.Right
+    valBox.ClearTextOnFocus=false; valBox.ZIndex=6; valBox.Parent=hdr; corner(valBox,5); stroke(valBox,acd,1)
     local vbPad=Instance.new("UIPadding"); vbPad.PaddingRight=UDim.new(0,5); vbPad.Parent=valBox
 
     local resetBtn=Instance.new("TextButton"); resetBtn.Size=UDim2.new(0.18,-2,1,2)
     resetBtn.Position=UDim2.new(0.82,2,0,-1)
     resetBtn.BackgroundColor3=T.surface; resetBtn.BorderSizePixel=0; resetBtn.Text="↺"
-    resetBtn.TextColor3=T.sub; resetBtn.TextSize=13; resetBtn.Font=Enum.Font.ArialBold
-    resetBtn.AutoButtonColor=false; resetBtn.ZIndex=6; resetBtn.Parent=hdr; corner(resetBtn,8); stroke(resetBtn,acd,1)
+    resetBtn.TextColor3=T.sub; resetBtn.TextSize=13; resetBtn.Font=Enum.Font.GothamBold
+    resetBtn.AutoButtonColor=false; resetBtn.ZIndex=6; resetBtn.Parent=hdr; corner(resetBtn,5); stroke(resetBtn,acd,1)
     resetBtn.MouseEnter:Connect(function() tw(resetBtn,{BackgroundColor3=T.cardH,TextColor3=ac}) end)
     resetBtn.MouseLeave:Connect(function() tw(resetBtn,{BackgroundColor3=T.surface,TextColor3=T.sub}) end)
 
@@ -1017,14 +1093,14 @@ end
 local function makeToggleCard(parent, labelText, descText, initVal, order, onCol, onChange)
     local oc = onCol or T.accent
     local card=Instance.new("Frame"); card.Size=UDim2.new(1,0,0,54); card.LayoutOrder=order or 0
-    card.BackgroundColor3=T.card; card.BorderSizePixel=0; card.Parent=parent; corner(card,16); stroke(card,T.border)
+    card.BackgroundColor3=T.card; card.BorderSizePixel=0; card.Parent=parent; corner(card,10); stroke(card,T.border)
 
     local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-60,0,20); lbl.Position=UDim2.new(0,14,0,8)
-    lbl.BackgroundTransparency=1; lbl.Text=labelText; lbl.TextSize=13; lbl.Font=Enum.Font.ArialBold
+    lbl.BackgroundTransparency=1; lbl.Text=labelText; lbl.TextSize=13; lbl.Font=Enum.Font.GothamBold
     lbl.TextColor3=T.text; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=card
 
     local desc=Instance.new("TextLabel"); desc.Size=UDim2.new(1,-60,0,14); desc.Position=UDim2.new(0,14,0,30)
-    desc.BackgroundTransparency=1; desc.Text=descText; desc.TextSize=10; desc.Font=Enum.Font.Arial
+    desc.BackgroundTransparency=1; desc.Text=descText; desc.TextSize=10; desc.Font=Enum.Font.Gotham
     desc.TextColor3=T.sub; desc.TextXAlignment=Enum.TextXAlignment.Left; desc.Parent=card
 
     local _pill, setPill = makePillToggleColored(card, initVal, oc, T.border, onChange)
@@ -1045,7 +1121,7 @@ local function makeSearchBar(parent, layoutOrder, borderColor, onChanged)
     searchRow.BorderSizePixel = 0
     searchRow.LayoutOrder = layoutOrder
     searchRow.Parent = parent
-    corner(searchRow, 14)
+    corner(searchRow, 8)
     stroke(searchRow, borderColor or T.border, 1)
 
     local iconLbl = Instance.new("TextLabel")
@@ -1054,7 +1130,7 @@ local function makeSearchBar(parent, layoutOrder, borderColor, onChanged)
     iconLbl.BackgroundTransparency = 1
     iconLbl.Text = "🔍"
     iconLbl.TextSize = 14
-    iconLbl.Font = Enum.Font.Arial
+    iconLbl.Font = Enum.Font.Gotham
     iconLbl.TextColor3 = T.sub
     iconLbl.TextXAlignment = Enum.TextXAlignment.Center
     iconLbl.Parent = searchRow
@@ -1069,7 +1145,7 @@ local function makeSearchBar(parent, layoutOrder, borderColor, onChanged)
     searchBox.Text = ""
     searchBox.TextColor3 = T.text
     searchBox.TextSize = 12
-    searchBox.Font = Enum.Font.Arial
+    searchBox.Font = Enum.Font.Gotham
     searchBox.ClearTextOnFocus = false
     searchBox.Parent = searchRow
 
@@ -1102,14 +1178,14 @@ local function buildGUI()
     local W, FH, MH = 480, 540, 44
     local minimized=false; local guiVisible=true
 
-    local TABS  = {"offset","targets","orbit","orb targets","fly","noclip","esp","aimbot","trigger","settings"}
+    local TABS  = {"Offset","Targets","Orbit","OrbTargets","Fly","Noclip","ESP","Aimbot","Trigger","Rage","Settings"}
     local tabCount = #TABS
 
     -- ── Window frame ──────────────────────────────────────────────────
     local winFrame=Instance.new("Frame"); winFrame.Size=UDim2.new(0,W,0,FH)
     winFrame.Position=UDim2.new(0.5,-W/2,0.5,-FH/2); winFrame.BackgroundColor3=T.bg
     winFrame.BorderSizePixel=0; winFrame.Active=true; winFrame.Draggable=false
-    winFrame.ClipsDescendants=true; winFrame.Parent=gui; corner(winFrame,20); stroke(winFrame,T.border)
+    winFrame.ClipsDescendants=true; winFrame.Parent=gui; corner(winFrame,12); stroke(winFrame,T.border)
 
     local strip=Instance.new("Frame"); strip.Size=UDim2.new(0,3,0,20); strip.Position=UDim2.new(0,0,0,12)
     strip.BackgroundColor3=T.accent; strip.BorderSizePixel=0; strip.Parent=winFrame; corner(strip,2)
@@ -1137,7 +1213,7 @@ local function buildGUI()
 
     local titleLbl=Instance.new("TextLabel"); titleLbl.Size=UDim2.new(1,-120,0,44); titleLbl.Position=UDim2.new(0,14,0,0)
     titleLbl.BackgroundTransparency=1; titleLbl.Text="Fake Position  v8"
-    titleLbl.TextSize=14; titleLbl.Font=Enum.Font.ArialBold
+    titleLbl.TextSize=14; titleLbl.Font=Enum.Font.GothamBold
     titleLbl.TextColor3=T.text; titleLbl.TextXAlignment=Enum.TextXAlignment.Left
     titleLbl.ZIndex=4; titleLbl.Parent=winFrame
 
@@ -1146,7 +1222,7 @@ local function buildGUI()
     local pillDot=Instance.new("Frame"); pillDot.Size=UDim2.new(0,6,0,6); pillDot.Position=UDim2.new(0,8,0.5,-3)
     pillDot.BackgroundColor3=T.accent; pillDot.BorderSizePixel=0; pillDot.ZIndex=5; pillDot.Parent=pill; corner(pillDot,3)
     local pillTxt=Instance.new("TextLabel"); pillTxt.Size=UDim2.new(1,-20,1,0); pillTxt.Position=UDim2.new(0,19,0,0)
-    pillTxt.BackgroundTransparency=1; pillTxt.Text="ACTIVE"; pillTxt.TextSize=10; pillTxt.Font=Enum.Font.ArialBold
+    pillTxt.BackgroundTransparency=1; pillTxt.Text="ACTIVE"; pillTxt.TextSize=10; pillTxt.Font=Enum.Font.GothamBold
     pillTxt.TextColor3=T.accent; pillTxt.TextXAlignment=Enum.TextXAlignment.Left; pillTxt.ZIndex=5; pillTxt.Parent=pill
 
     local function updateStatus()
@@ -1160,7 +1236,7 @@ local function buildGUI()
 
     local minBtn=Instance.new("TextButton"); minBtn.Size=UDim2.new(0,28,0,22); minBtn.Position=UDim2.new(1,-36,0,11)
     minBtn.BackgroundColor3=T.card; minBtn.BorderSizePixel=0; minBtn.Text="—"; minBtn.TextColor3=T.sub
-    minBtn.TextSize=13; minBtn.Font=Enum.Font.ArialBold; minBtn.AutoButtonColor=false; minBtn.ZIndex=5; minBtn.Parent=winFrame; corner(minBtn,10)
+    minBtn.TextSize=13; minBtn.Font=Enum.Font.GothamBold; minBtn.AutoButtonColor=false; minBtn.ZIndex=5; minBtn.Parent=winFrame; corner(minBtn,6)
     minBtn.MouseEnter:Connect(function() tw(minBtn,{BackgroundColor3=T.cardH}) end)
     minBtn.MouseLeave:Connect(function() tw(minBtn,{BackgroundColor3=T.card})  end)
     minBtn.MouseButton1Click:Connect(function()
@@ -1204,28 +1280,29 @@ local function buildGUI()
     local espPage          = makePage()
     local aimbotPage       = makePage()
     local triggerPage      = makePage()
+    local ragebotPage      = makePage()
     local settingsPage     = makePage()
-    local pages        = {offsetPage, targetPage, orbitPage, orbitTargetPage, flyPage, noclipPage, espPage, aimbotPage, triggerPage, settingsPage}
+    local pages        = {offsetPage, targetPage, orbitPage, orbitTargetPage, flyPage, noclipPage, espPage, aimbotPage, triggerPage, ragebotPage, settingsPage}
     local tabBtns      = {}
 
     local TAB_COLORS = {
-        T.pink, T.pink, T.pink, T.pink, T.pink, T.pink, T.pink,
-        T.pink, T.pink, T.pink
+        T.accent, T.accent, T.red, T.red, T.blue, T.purple, T.yellow,
+        T.blue, T.purple, T.rage, T.sub
     }
 
     local function switchTab(idx)
         for i,pg in ipairs(pages) do pg.Visible=(i==idx) end
         for i,btn in ipairs(tabBtns) do
             local ul=btn:FindFirstChildOfClass("Frame"); if ul then ul.Visible=(i==idx) end
-            if i==idx then tw(btn,{TextColor3=T.text}); btn.Font=Enum.Font.ArialBold
-            else tw(btn,{TextColor3=T.sub}); btn.Font=Enum.Font.Arial end
+            if i==idx then tw(btn,{TextColor3=T.text}); btn.Font=Enum.Font.GothamBold
+            else tw(btn,{TextColor3=T.sub}); btn.Font=Enum.Font.Gotham end
         end
     end
 
     local tW=W/#TABS
     for i,name in ipairs(TABS) do
         local btn=Instance.new("TextButton"); btn.Size=UDim2.new(0,tW,1,-1); btn.Position=UDim2.new(0,(i-1)*tW,0,0)
-        btn.BackgroundTransparency=1; btn.BorderSizePixel=0; btn.Text=name; btn.TextSize=10; btn.Font=Enum.Font.Arial
+        btn.BackgroundTransparency=1; btn.BorderSizePixel=0; btn.Text=name; btn.TextSize=10; btn.Font=Enum.Font.Gotham
         btn.TextColor3=T.sub; btn.AutoButtonColor=false; btn.Parent=tabBar; tabBtns[i]=btn
         local ul=Instance.new("Frame"); ul.Size=UDim2.new(0.55,0,0,2); ul.Position=UDim2.new(0.225,0,1,-2)
         ul.BackgroundColor3=TAB_COLORS[i]; ul.BorderSizePixel=0; ul.Visible=(i==1); ul.Parent=btn; corner(ul,1)
@@ -1241,8 +1318,8 @@ local function buildGUI()
 
     local resetBtn=Instance.new("TextButton"); resetBtn.Size=UDim2.new(1,0,0,34)
     resetBtn.BackgroundColor3=T.card; resetBtn.BorderSizePixel=0; resetBtn.Text="↺   Reset  ( 0 / 1000 / 0 )"
-    resetBtn.TextSize=12; resetBtn.Font=Enum.Font.Arial; resetBtn.TextColor3=T.sub
-    resetBtn.AutoButtonColor=false; resetBtn.Parent=offsetPage; corner(resetBtn,12); stroke(resetBtn,T.border)
+    resetBtn.TextSize=12; resetBtn.Font=Enum.Font.Gotham; resetBtn.TextColor3=T.sub
+    resetBtn.AutoButtonColor=false; resetBtn.Parent=offsetPage; corner(resetBtn,8); stroke(resetBtn,T.border)
     resetBtn.MouseEnter:Connect(function() tw(resetBtn,{BackgroundColor3=T.cardH,TextColor3=T.text}) end)
     resetBtn.MouseLeave:Connect(function() tw(resetBtn,{BackgroundColor3=T.card, TextColor3=T.sub})  end)
     resetBtn.MouseButton1Click:Connect(function()
@@ -1280,7 +1357,7 @@ local function buildGUI()
 
     for i,p in ipairs(BUILTIN) do
         local btn=Instance.new("TextButton"); btn.Size=UDim2.new(1/#BUILTIN,-(6*(#BUILTIN-1)/#BUILTIN),1,0); btn.BackgroundColor3=T.card
-        btn.BorderSizePixel=0; btn.Text=p.name; btn.TextSize=11; btn.Font=Enum.Font.ArialBold
+        btn.BorderSizePixel=0; btn.Text=p.name; btn.TextSize=11; btn.Font=Enum.Font.GothamBold
         btn.TextColor3=p.col; btn.AutoButtonColor=false; btn.LayoutOrder=i; btn.Parent=builtRow
         corner(btn,8); stroke(btn,T.border); builtinBtns[p.name]=btn
         btn.MouseEnter:Connect(function() if activeBuiltin~=p.name then tw(btn,{BackgroundColor3=T.cardH}) end end)
@@ -1299,11 +1376,11 @@ local function buildGUI()
     local nameBox=Instance.new("TextBox"); nameBox.Size=UDim2.new(1,-82,1,-10); nameBox.Position=UDim2.new(0,10,0,5)
     nameBox.BackgroundColor3=T.surface; nameBox.BorderSizePixel=0; nameBox.PlaceholderText="Preset name..."
     nameBox.PlaceholderColor3=T.sub; nameBox.Text=""; nameBox.TextColor3=T.text; nameBox.TextSize=12
-    nameBox.Font=Enum.Font.Arial; nameBox.ClearTextOnFocus=false; nameBox.Parent=saveRow; corner(nameBox,10)
+    nameBox.Font=Enum.Font.Gotham; nameBox.ClearTextOnFocus=false; nameBox.Parent=saveRow; corner(nameBox,6)
     local saveBtn=Instance.new("TextButton"); saveBtn.Size=UDim2.new(0,64,1,-10); saveBtn.Position=UDim2.new(1,-72,0,5)
-    saveBtn.BackgroundColor3=T.accent; saveBtn.BorderSizePixel=0; saveBtn.Text="save"
-    saveBtn.TextColor3=Color3.fromRGB(14,14,14); saveBtn.TextSize=12; saveBtn.Font=Enum.Font.ArialBold
-    saveBtn.AutoButtonColor=false; saveBtn.Parent=saveRow; corner(saveBtn,10)
+    saveBtn.BackgroundColor3=T.accent; saveBtn.BorderSizePixel=0; saveBtn.Text="Save"
+    saveBtn.TextColor3=Color3.fromRGB(14,14,14); saveBtn.TextSize=12; saveBtn.Font=Enum.Font.GothamBold
+    saveBtn.AutoButtonColor=false; saveBtn.Parent=saveRow; corner(saveBtn,6)
     saveBtn.MouseEnter:Connect(function() tw(saveBtn,{BackgroundColor3=T.accentH}) end)
     saveBtn.MouseLeave:Connect(function() tw(saveBtn,{BackgroundColor3=T.accent}) end)
 
@@ -1315,16 +1392,16 @@ local function buildGUI()
         for _,r in pairs(customRows) do r:Destroy() end; customRows={}
         for i,cp in ipairs(customPresets) do
             local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,38); row.LayoutOrder=i
-            row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=customFrame; corner(row,14); table.insert(customRows,row)
+            row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=customFrame; corner(row,8); table.insert(customRows,row)
             local applyBtn=Instance.new("TextButton"); applyBtn.Size=UDim2.new(1,-50,1,0); applyBtn.BackgroundTransparency=1
             applyBtn.AutoButtonColor=false; applyBtn.TextXAlignment=Enum.TextXAlignment.Left; applyBtn.Parent=row
             local nameLbl=Instance.new("TextLabel"); nameLbl.Size=UDim2.new(1,0,0,18); nameLbl.Position=UDim2.new(0,0,0,4)
-            nameLbl.BackgroundTransparency=1; nameLbl.Text=cp.name; nameLbl.TextSize=12; nameLbl.Font=Enum.Font.ArialBold
+            nameLbl.BackgroundTransparency=1; nameLbl.Text=cp.name; nameLbl.TextSize=12; nameLbl.Font=Enum.Font.GothamBold
             nameLbl.TextColor3=T.accent; nameLbl.TextXAlignment=Enum.TextXAlignment.Left; nameLbl.Parent=applyBtn
             local lp=Instance.new("UIPadding"); lp.PaddingLeft=UDim.new(0,10); lp.Parent=nameLbl
             local coordLbl=Instance.new("TextLabel"); coordLbl.Size=UDim2.new(1,0,0,12); coordLbl.Position=UDim2.new(0,0,1,-14)
             coordLbl.BackgroundTransparency=1; coordLbl.Text=cp.x.." / "..cp.y.." / "..cp.z
-            coordLbl.TextSize=9; coordLbl.Font=Enum.Font.Arial; coordLbl.TextColor3=T.sub
+            coordLbl.TextSize=9; coordLbl.Font=Enum.Font.Gotham; coordLbl.TextColor3=T.sub
             coordLbl.TextXAlignment=Enum.TextXAlignment.Left; coordLbl.Parent=applyBtn
             local cp2=Instance.new("UIPadding"); cp2.PaddingLeft=UDim.new(0,10); cp2.Parent=coordLbl
             applyBtn.MouseButton1Click:Connect(function()
@@ -1333,7 +1410,7 @@ local function buildGUI()
             end)
             local delBtn=Instance.new("TextButton"); delBtn.Size=UDim2.new(0,26,0,26); delBtn.Position=UDim2.new(1,-34,0.5,-13)
             delBtn.BackgroundColor3=T.red; delBtn.BorderSizePixel=0; delBtn.Text="✕"; delBtn.TextColor3=Color3.fromRGB(255,255,255)
-            delBtn.TextSize=10; delBtn.Font=Enum.Font.ArialBold; delBtn.AutoButtonColor=false; delBtn.Parent=row; corner(delBtn,8)
+            delBtn.TextSize=10; delBtn.Font=Enum.Font.GothamBold; delBtn.AutoButtonColor=false; delBtn.Parent=row; corner(delBtn,5)
             delBtn.MouseEnter:Connect(function() tw(delBtn,{BackgroundColor3=T.redH}) end)
             delBtn.MouseLeave:Connect(function() tw(delBtn,{BackgroundColor3=T.red}) end)
             local ci=i; delBtn.MouseButton1Click:Connect(function() table.remove(customPresets,ci); saveAll(); rebuildCustom() end)
@@ -1347,7 +1424,7 @@ local function buildGUI()
         if n=="" then tw(nameBox,{BackgroundColor3=Color3.fromRGB(48,18,18)}); task.delay(0.5,function() tw(nameBox,{BackgroundColor3=T.surface}) end); return end
         table.insert(customPresets,{name=n,x=state.x,y=state.y,z=state.z}); saveAll(); nameBox.Text=""
         saveBtn.Text="✓"; tw(saveBtn,{BackgroundColor3=T.accentH})
-        task.delay(0.8,function() saveBtn.Text="save"; tw(saveBtn,{BackgroundColor3=T.accent}) end); rebuildCustom()
+        task.delay(0.8,function() saveBtn.Text="Save"; tw(saveBtn,{BackgroundColor3=T.accent}) end); rebuildCustom()
     end)
     rebuildCustom()
 
@@ -1372,14 +1449,14 @@ local function buildGUI()
         local taIconF=Instance.new("Frame"); taIconF.Size=UDim2.new(0,38,0,38); taIconF.Position=UDim2.new(0,6,0.5,-19)
         taIconF.BackgroundColor3=state.targetAll and T.accentD or T.surface; taIconF.BorderSizePixel=0; taIconF.Parent=taRow; corner(taIconF,19)
         local taIconL=Instance.new("TextLabel"); taIconL.Size=UDim2.new(1,0,1,0); taIconL.BackgroundTransparency=1; taIconL.Text="★"
-        taIconL.TextSize=16; taIconL.Font=Enum.Font.ArialBold; taIconL.TextColor3=state.targetAll and T.accent or T.sub
+        taIconL.TextSize=16; taIconL.Font=Enum.Font.GothamBold; taIconL.TextColor3=state.targetAll and T.accent or T.sub
         taIconL.TextXAlignment=Enum.TextXAlignment.Center; taIconL.Parent=taIconF
         local function rowLabel(parent,text,size,font,color,pos,sz)
             local l=Instance.new("TextLabel"); l.Size=sz; l.Position=pos; l.BackgroundTransparency=1; l.Text=text
             l.TextSize=size; l.Font=font; l.TextColor3=color; l.TextXAlignment=Enum.TextXAlignment.Left; l.Parent=parent; return l
         end
-        rowLabel(taRow,"Target All",13,Enum.Font.ArialBold,state.targetAll and T.text or T.sub,UDim2.new(0,52,0,7),UDim2.new(1,-106,0,18))
-        rowLabel(taRow,"Spoofs every player in server",10,Enum.Font.Arial,T.sub,UDim2.new(0,52,0,26),UDim2.new(1,-106,0,13))
+        rowLabel(taRow,"Target All",13,Enum.Font.GothamBold,state.targetAll and T.text or T.sub,UDim2.new(0,52,0,7),UDim2.new(1,-106,0,18))
+        rowLabel(taRow,"Spoofs every player in server",10,Enum.Font.Gotham,T.sub,UDim2.new(0,52,0,26),UDim2.new(1,-106,0,13))
         local taPill=Instance.new("Frame"); taPill.Size=UDim2.new(0,40,0,22); taPill.Position=UDim2.new(1,-48,0.5,-11)
         taPill.BackgroundColor3=state.targetAll and T.accent or T.border; taPill.BorderSizePixel=0; taPill.Parent=taRow; corner(taPill,11)
         local taPT=Instance.new("Frame"); taPT.Size=UDim2.new(0,15,0,15)
@@ -1403,7 +1480,7 @@ local function buildGUI()
                     idx = idx + 1
                     local active=targeted[p.Name]==true
                     local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,54); row.LayoutOrder=idx
-                    row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=targetPage; corner(row,16)
+                    row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=targetPage; corner(row,10)
                     stroke(row,active and T.accentD or T.border,active and 1.5 or 1); table.insert(targetRowsList,row)
                     local avaCircle=Instance.new("Frame"); avaCircle.Size=UDim2.new(0,40,0,40); avaCircle.Position=UDim2.new(0,7,0.5,-20)
                     avaCircle.BackgroundColor3=T.surface; avaCircle.BorderSizePixel=0; avaCircle.ClipsDescendants=true; avaCircle.Parent=row; corner(avaCircle,20)
@@ -1414,10 +1491,10 @@ local function buildGUI()
                         if ok and img then avaImg.Image=img end
                     end)
                     local dispN=Instance.new("TextLabel"); dispN.Size=UDim2.new(1,-106,0,18); dispN.Position=UDim2.new(0,55,0,9)
-                    dispN.BackgroundTransparency=1; dispN.Text=p.DisplayName; dispN.TextSize=13; dispN.Font=Enum.Font.ArialBold
+                    dispN.BackgroundTransparency=1; dispN.Text=p.DisplayName; dispN.TextSize=13; dispN.Font=Enum.Font.GothamBold
                     dispN.TextColor3=active and T.text or T.sub; dispN.TextXAlignment=Enum.TextXAlignment.Left; dispN.TextTruncate=Enum.TextTruncate.AtEnd; dispN.Parent=row
                     local userN=Instance.new("TextLabel"); userN.Size=UDim2.new(1,-106,0,13); userN.Position=UDim2.new(0,55,0,29)
-                    userN.BackgroundTransparency=1; userN.Text="@"..p.Name; userN.TextSize=10; userN.Font=Enum.Font.Arial
+                    userN.BackgroundTransparency=1; userN.Text="@"..p.Name; userN.TextSize=10; userN.Font=Enum.Font.Gotham
                     userN.TextColor3=T.sub; userN.TextXAlignment=Enum.TextXAlignment.Left; userN.TextTruncate=Enum.TextTruncate.AtEnd; userN.Parent=row
                     local pPill=Instance.new("Frame"); pPill.Size=UDim2.new(0,40,0,22); pPill.Position=UDim2.new(1,-48,0.5,-11)
                     pPill.BackgroundColor3=active and T.accent or T.border; pPill.BorderSizePixel=0; pPill.Parent=row; corner(pPill,11)
@@ -1443,7 +1520,7 @@ local function buildGUI()
         if idx == 0 and q ~= "" then
             local noRes=Instance.new("TextLabel"); noRes.Size=UDim2.new(1,0,0,36); noRes.LayoutOrder=1
             noRes.BackgroundTransparency=1; noRes.Text='No players match "'..targetSearchQuery..'"'
-            noRes.TextSize=11; noRes.Font=Enum.Font.Arial; noRes.TextColor3=T.sub
+            noRes.TextSize=11; noRes.Font=Enum.Font.Gotham; noRes.TextColor3=T.sub
             noRes.TextXAlignment=Enum.TextXAlignment.Center; noRes.Parent=targetPage
             table.insert(targetRowsList, noRes)
         end
@@ -1466,10 +1543,10 @@ local function buildGUI()
     local orbitInfoCard=Instance.new("Frame"); orbitInfoCard.Size=UDim2.new(1,0,0,60); orbitInfoCard.LayoutOrder=1
     orbitInfoCard.BackgroundColor3=Color3.fromRGB(55,18,18); orbitInfoCard.BorderSizePixel=0; orbitInfoCard.Parent=orbitPage; corner(orbitInfoCard,10)
     local orbitInfoLbl=Instance.new("TextLabel"); orbitInfoLbl.Size=UDim2.new(1,-16,1,0); orbitInfoLbl.Position=UDim2.new(0,12,0,0)
-    orbitInfoLbl.BackgroundTransparency=1; orbitInfoLbl.TextSize=10; orbitInfoLbl.Font=Enum.Font.Arial
+    orbitInfoLbl.BackgroundTransparency=1; orbitInfoLbl.TextSize=10; orbitInfoLbl.Font=Enum.Font.Gotham
     orbitInfoLbl.TextColor3=Color3.fromRGB(255,160,160); orbitInfoLbl.TextXAlignment=Enum.TextXAlignment.Left
     orbitInfoLbl.TextWrapped=true
-    orbitInfoLbl.Text="🔴  orbits targeted players around your position.\nadjust speed, distance and height below."
+    orbitInfoLbl.Text="🔴  Orbits targeted players around your position.\nAdjust speed, distance and height below."
     orbitInfoLbl.Parent=orbitInfoCard
 
     local _orbitCard, _setOrbitPill = makeToggleCard(
@@ -1486,19 +1563,19 @@ local function buildGUI()
     local orbitModeCard=Instance.new("Frame"); orbitModeCard.Size=UDim2.new(1,0,0,54); orbitModeCard.LayoutOrder=4
     orbitModeCard.BackgroundColor3=T.card; orbitModeCard.BorderSizePixel=0; orbitModeCard.Parent=orbitPage; corner(orbitModeCard,10); stroke(orbitModeCard,T.border)
     local orbitModeLbl=Instance.new("TextLabel"); orbitModeLbl.Size=UDim2.new(1,-60,0,20); orbitModeLbl.Position=UDim2.new(0,14,0,8)
-    orbitModeLbl.BackgroundTransparency=1; orbitModeLbl.TextSize=13; orbitModeLbl.Font=Enum.Font.ArialBold
+    orbitModeLbl.BackgroundTransparency=1; orbitModeLbl.TextSize=13; orbitModeLbl.Font=Enum.Font.GothamBold
     orbitModeLbl.TextColor3=T.text; orbitModeLbl.TextXAlignment=Enum.TextXAlignment.Left; orbitModeLbl.Parent=orbitModeCard
     local orbitModeDesc=Instance.new("TextLabel"); orbitModeDesc.Size=UDim2.new(1,-60,0,14); orbitModeDesc.Position=UDim2.new(0,14,0,30)
-    orbitModeDesc.BackgroundTransparency=1; orbitModeDesc.TextSize=10; orbitModeDesc.Font=Enum.Font.Arial
+    orbitModeDesc.BackgroundTransparency=1; orbitModeDesc.TextSize=10; orbitModeDesc.Font=Enum.Font.Gotham
     orbitModeDesc.TextColor3=T.sub; orbitModeDesc.TextXAlignment=Enum.TextXAlignment.Left; orbitModeDesc.Parent=orbitModeCard
 
     local function updateOrbitModeLabels()
         if state.orbitReverse then
-            orbitModeLbl.Text="🧍  you orbit the target"
-            orbitModeDesc.Text="your character circles around the target"
+            orbitModeLbl.Text="🧍  You orbit the target"
+            orbitModeDesc.Text="Your character circles around the target"
         else
             orbitModeLbl.Text="🎯  Target orbits you"
-            orbitModeDesc.Text="target's position circles around you"
+            orbitModeDesc.Text="Target's position circles around you"
         end
     end
     updateOrbitModeLabels()
@@ -1519,10 +1596,10 @@ local function buildGUI()
     local randOrbitCard=Instance.new("Frame"); randOrbitCard.Size=UDim2.new(1,0,0,54); randOrbitCard.LayoutOrder=8
     randOrbitCard.BackgroundColor3=T.card; randOrbitCard.BorderSizePixel=0; randOrbitCard.Parent=orbitPage; corner(randOrbitCard,10); stroke(randOrbitCard,T.border)
     local randOrbitLbl=Instance.new("TextLabel"); randOrbitLbl.Size=UDim2.new(1,-60,0,20); randOrbitLbl.Position=UDim2.new(0,14,0,8)
-    randOrbitLbl.BackgroundTransparency=1; randOrbitLbl.Text="🎲  random direction"; randOrbitLbl.TextSize=13; randOrbitLbl.Font=Enum.Font.ArialBold
+    randOrbitLbl.BackgroundTransparency=1; randOrbitLbl.Text="🎲  Random Direction"; randOrbitLbl.TextSize=13; randOrbitLbl.Font=Enum.Font.GothamBold
     randOrbitLbl.TextColor3=T.text; randOrbitLbl.TextXAlignment=Enum.TextXAlignment.Left; randOrbitLbl.Parent=randOrbitCard
     local randOrbitDesc=Instance.new("TextLabel"); randOrbitDesc.Size=UDim2.new(1,-60,0,14); randOrbitDesc.Position=UDim2.new(0,14,0,30)
-    randOrbitDesc.BackgroundTransparency=1; randOrbitDesc.Text="randomly flip orbit direction every ~2s"; randOrbitDesc.TextSize=10; randOrbitDesc.Font=Enum.Font.Arial
+    randOrbitDesc.BackgroundTransparency=1; randOrbitDesc.Text="Randomly flip orbit direction every ~2s"; randOrbitDesc.TextSize=10; randOrbitDesc.Font=Enum.Font.Gotham
     randOrbitDesc.TextColor3=T.sub; randOrbitDesc.TextXAlignment=Enum.TextXAlignment.Left; randOrbitDesc.Parent=randOrbitCard
     local _randOrbitPill, setRandOrbitPill = makePillToggleColored(randOrbitCard, state.randomDir, T.yellow, T.border, function(v)
         state.randomDir = v; saveAll()
@@ -1539,10 +1616,10 @@ local function buildGUI()
     local orbitTargetInfoCard=Instance.new("Frame"); orbitTargetInfoCard.Size=UDim2.new(1,0,0,52); orbitTargetInfoCard.LayoutOrder=1
     orbitTargetInfoCard.BackgroundColor3=Color3.fromRGB(55,18,18); orbitTargetInfoCard.BorderSizePixel=0; orbitTargetInfoCard.Parent=orbitTargetPage; corner(orbitTargetInfoCard,10)
     local orbitTargetInfoLbl=Instance.new("TextLabel"); orbitTargetInfoLbl.Size=UDim2.new(1,-16,1,0); orbitTargetInfoLbl.Position=UDim2.new(0,12,0,0)
-    orbitTargetInfoLbl.BackgroundTransparency=1; orbitTargetInfoLbl.TextSize=10; orbitTargetInfoLbl.Font=Enum.Font.Arial
+    orbitTargetInfoLbl.BackgroundTransparency=1; orbitTargetInfoLbl.TextSize=10; orbitTargetInfoLbl.Font=Enum.Font.Gotham
     orbitTargetInfoLbl.TextColor3=Color3.fromRGB(255,160,160); orbitTargetInfoLbl.TextXAlignment=Enum.TextXAlignment.Left
     orbitTargetInfoLbl.TextWrapped=true
-    orbitTargetInfoLbl.Text="🔴  choose which players the orbit system affects.\nthis is separate from position spoof targets."
+    orbitTargetInfoLbl.Text="🔴  Choose which players the Orbit system affects.\nThis is separate from Position Spoof targets."
     orbitTargetInfoLbl.Parent=orbitTargetInfoCard
 
     -- Search bar for orbit targets (LayoutOrder=2, after info card)
@@ -1563,13 +1640,13 @@ local function buildGUI()
         local taIconF=Instance.new("Frame"); taIconF.Size=UDim2.new(0,38,0,38); taIconF.Position=UDim2.new(0,6,0.5,-19)
         taIconF.BackgroundColor3=state.targetAll and Color3.fromRGB(55,18,18) or T.surface; taIconF.BorderSizePixel=0; taIconF.Parent=taRow; corner(taIconF,19)
         local taIconL=Instance.new("TextLabel"); taIconL.Size=UDim2.new(1,0,1,0); taIconL.BackgroundTransparency=1; taIconL.Text="★"
-        taIconL.TextSize=16; taIconL.Font=Enum.Font.ArialBold; taIconL.TextColor3=state.targetAll and T.red or T.sub
+        taIconL.TextSize=16; taIconL.Font=Enum.Font.GothamBold; taIconL.TextColor3=state.targetAll and T.red or T.sub
         taIconL.TextXAlignment=Enum.TextXAlignment.Center; taIconL.Parent=taIconF
         local oTaLbl=Instance.new("TextLabel"); oTaLbl.Size=UDim2.new(1,-106,0,18); oTaLbl.Position=UDim2.new(0,52,0,7)
-        oTaLbl.BackgroundTransparency=1; oTaLbl.Text="orbit all"; oTaLbl.TextSize=13; oTaLbl.Font=Enum.Font.ArialBold
+        oTaLbl.BackgroundTransparency=1; oTaLbl.Text="Orbit All"; oTaLbl.TextSize=13; oTaLbl.Font=Enum.Font.GothamBold
         oTaLbl.TextColor3=state.targetAll and T.text or T.sub; oTaLbl.TextXAlignment=Enum.TextXAlignment.Left; oTaLbl.Parent=taRow
         local oTaDesc=Instance.new("TextLabel"); oTaDesc.Size=UDim2.new(1,-106,0,13); oTaDesc.Position=UDim2.new(0,52,0,26)
-        oTaDesc.BackgroundTransparency=1; oTaDesc.Text="orbits every player in server"; oTaDesc.TextSize=10; oTaDesc.Font=Enum.Font.Arial
+        oTaDesc.BackgroundTransparency=1; oTaDesc.Text="Orbits every player in server"; oTaDesc.TextSize=10; oTaDesc.Font=Enum.Font.Gotham
         oTaDesc.TextColor3=T.sub; oTaDesc.TextXAlignment=Enum.TextXAlignment.Left; oTaDesc.Parent=taRow
         local oTaPill=Instance.new("Frame"); oTaPill.Size=UDim2.new(0,40,0,22); oTaPill.Position=UDim2.new(1,-48,0.5,-11)
         oTaPill.BackgroundColor3=state.targetAll and T.red or T.border; oTaPill.BorderSizePixel=0; oTaPill.Parent=taRow; corner(oTaPill,11)
@@ -1593,7 +1670,7 @@ local function buildGUI()
                     idx = idx + 1
                     local active = orbitTargeted[p.Name] == true
                     local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,54); row.LayoutOrder=idx+3
-                    row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=orbitTargetPage; corner(row,16)
+                    row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=orbitTargetPage; corner(row,10)
                     stroke(row,active and Color3.fromRGB(80,18,18) or T.border,active and 1.5 or 1); table.insert(orbitTargetRowsList,row)
                     local avaCircle=Instance.new("Frame"); avaCircle.Size=UDim2.new(0,40,0,40); avaCircle.Position=UDim2.new(0,7,0.5,-20)
                     avaCircle.BackgroundColor3=T.surface; avaCircle.BorderSizePixel=0; avaCircle.ClipsDescendants=true; avaCircle.Parent=row; corner(avaCircle,20)
@@ -1604,10 +1681,10 @@ local function buildGUI()
                         if ok and img then avaImg.Image=img end
                     end)
                     local dispN=Instance.new("TextLabel"); dispN.Size=UDim2.new(1,-106,0,18); dispN.Position=UDim2.new(0,55,0,9)
-                    dispN.BackgroundTransparency=1; dispN.Text=p.DisplayName; dispN.TextSize=13; dispN.Font=Enum.Font.ArialBold
+                    dispN.BackgroundTransparency=1; dispN.Text=p.DisplayName; dispN.TextSize=13; dispN.Font=Enum.Font.GothamBold
                     dispN.TextColor3=active and T.text or T.sub; dispN.TextXAlignment=Enum.TextXAlignment.Left; dispN.TextTruncate=Enum.TextTruncate.AtEnd; dispN.Parent=row
                     local userN=Instance.new("TextLabel"); userN.Size=UDim2.new(1,-106,0,13); userN.Position=UDim2.new(0,55,0,29)
-                    userN.BackgroundTransparency=1; userN.Text="@"..p.Name; userN.TextSize=10; userN.Font=Enum.Font.Arial
+                    userN.BackgroundTransparency=1; userN.Text="@"..p.Name; userN.TextSize=10; userN.Font=Enum.Font.Gotham
                     userN.TextColor3=T.sub; userN.TextXAlignment=Enum.TextXAlignment.Left; userN.TextTruncate=Enum.TextTruncate.AtEnd; userN.Parent=row
                     local pPill=Instance.new("Frame"); pPill.Size=UDim2.new(0,40,0,22); pPill.Position=UDim2.new(1,-48,0.5,-11)
                     pPill.BackgroundColor3=active and T.red or T.border; pPill.BorderSizePixel=0; pPill.Parent=row; corner(pPill,11)
@@ -1629,7 +1706,7 @@ local function buildGUI()
         if idx == 0 and q ~= "" then
             local noRes=Instance.new("TextLabel"); noRes.Size=UDim2.new(1,0,0,36); noRes.LayoutOrder=4
             noRes.BackgroundTransparency=1; noRes.Text='No players match "'..orbitSearchQuery..'"'
-            noRes.TextSize=11; noRes.Font=Enum.Font.Arial; noRes.TextColor3=T.sub
+            noRes.TextSize=11; noRes.Font=Enum.Font.Gotham; noRes.TextColor3=T.sub
             noRes.TextXAlignment=Enum.TextXAlignment.Center; noRes.Parent=orbitTargetPage
             table.insert(orbitTargetRowsList, noRes)
         end
@@ -1657,7 +1734,7 @@ local function buildGUI()
     local flyInfoCard=Instance.new("Frame"); flyInfoCard.Size=UDim2.new(1,0,0,70); flyInfoCard.LayoutOrder=1
     flyInfoCard.BackgroundColor3=T.blueD; flyInfoCard.BorderSizePixel=0; flyInfoCard.Parent=flyPage; corner(flyInfoCard,10)
     local flyInfoLbl=Instance.new("TextLabel"); flyInfoLbl.Size=UDim2.new(1,-16,1,0); flyInfoLbl.Position=UDim2.new(0,12,0,0)
-    flyInfoLbl.BackgroundTransparency=1; flyInfoLbl.TextSize=10; flyInfoLbl.Font=Enum.Font.Arial
+    flyInfoLbl.BackgroundTransparency=1; flyInfoLbl.TextSize=10; flyInfoLbl.Font=Enum.Font.Gotham
     flyInfoLbl.TextColor3=Color3.fromRGB(160,200,255); flyInfoLbl.TextXAlignment=Enum.TextXAlignment.Left
     flyInfoLbl.TextWrapped=true
     flyInfoLbl.Text="✈  WASD to move  ·  Space to rise  ·  LCtrl/LShift to descend\nStand still to hover in place"
@@ -1691,7 +1768,7 @@ local function buildGUI()
     local noclipInfoCard=Instance.new("Frame"); noclipInfoCard.Size=UDim2.new(1,0,0,60); noclipInfoCard.LayoutOrder=1
     noclipInfoCard.BackgroundColor3=T.purpleD; noclipInfoCard.BorderSizePixel=0; noclipInfoCard.Parent=noclipPage; corner(noclipInfoCard,10)
     local noclipInfoLbl=Instance.new("TextLabel"); noclipInfoLbl.Size=UDim2.new(1,-16,1,0); noclipInfoLbl.Position=UDim2.new(0,12,0,0)
-    noclipInfoLbl.BackgroundTransparency=1; noclipInfoLbl.TextSize=10; noclipInfoLbl.Font=Enum.Font.Arial
+    noclipInfoLbl.BackgroundTransparency=1; noclipInfoLbl.TextSize=10; noclipInfoLbl.Font=Enum.Font.Gotham
     noclipInfoLbl.TextColor3=Color3.fromRGB(200,170,255); noclipInfoLbl.TextXAlignment=Enum.TextXAlignment.Left
     noclipInfoLbl.TextWrapped=true
     noclipInfoLbl.Text="👻  Walk/fly through walls and terrain.\nCombine with Fly tab for full ghost mode."
@@ -1709,8 +1786,8 @@ local function buildGUI()
 
     local comboBtn=Instance.new("TextButton"); comboBtn.Size=UDim2.new(1,0,0,38); comboBtn.LayoutOrder=3
     comboBtn.BackgroundColor3=Color3.fromRGB(50,30,70); comboBtn.BorderSizePixel=0
-    comboBtn.Text="⚡  Ghost Mode  (Fly + Noclip)"; comboBtn.TextSize=12; comboBtn.Font=Enum.Font.ArialBold
-    comboBtn.TextColor3=T.purple; comboBtn.AutoButtonColor=false; comboBtn.Parent=noclipPage; corner(comboBtn,14)
+    comboBtn.Text="⚡  Ghost Mode  (Fly + Noclip)"; comboBtn.TextSize=12; comboBtn.Font=Enum.Font.GothamBold
+    comboBtn.TextColor3=T.purple; comboBtn.AutoButtonColor=false; comboBtn.Parent=noclipPage; corner(comboBtn,8)
     stroke(comboBtn,T.purple,1)
     comboBtn.MouseEnter:Connect(function() tw(comboBtn,{BackgroundColor3=Color3.fromRGB(65,40,90)}) end)
     comboBtn.MouseLeave:Connect(function() tw(comboBtn,{BackgroundColor3=Color3.fromRGB(50,30,70)}) end)
@@ -1722,8 +1799,8 @@ local function buildGUI()
 
     local disableGhostBtn=Instance.new("TextButton"); disableGhostBtn.Size=UDim2.new(1,0,0,38); disableGhostBtn.LayoutOrder=4
     disableGhostBtn.BackgroundColor3=Color3.fromRGB(60,20,20); disableGhostBtn.BorderSizePixel=0
-    disableGhostBtn.Text="✕  Disable Ghost Mode"; disableGhostBtn.TextSize=12; disableGhostBtn.Font=Enum.Font.ArialBold
-    disableGhostBtn.TextColor3=T.red; disableGhostBtn.AutoButtonColor=false; disableGhostBtn.Parent=noclipPage; corner(disableGhostBtn,14)
+    disableGhostBtn.Text="✕  Disable Ghost Mode"; disableGhostBtn.TextSize=12; disableGhostBtn.Font=Enum.Font.GothamBold
+    disableGhostBtn.TextColor3=T.red; disableGhostBtn.AutoButtonColor=false; disableGhostBtn.Parent=noclipPage; corner(disableGhostBtn,8)
     stroke(disableGhostBtn,T.red,1)
     disableGhostBtn.MouseEnter:Connect(function() tw(disableGhostBtn,{BackgroundColor3=Color3.fromRGB(80,28,28)}) end)
     disableGhostBtn.MouseLeave:Connect(function() tw(disableGhostBtn,{BackgroundColor3=Color3.fromRGB(60,20,20)}) end)
@@ -1742,7 +1819,7 @@ local function buildGUI()
     local espMasterCard=Instance.new("Frame"); espMasterCard.Size=UDim2.new(1,0,0,44); espMasterCard.LayoutOrder=1
     espMasterCard.BackgroundColor3=T.card; espMasterCard.BorderSizePixel=0; espMasterCard.Parent=espPage; corner(espMasterCard,8); stroke(espMasterCard,T.border)
     local espMasterLbl=Instance.new("TextLabel"); espMasterLbl.Size=UDim2.new(1,-60,1,0); espMasterLbl.Position=UDim2.new(0,12,0,0)
-    espMasterLbl.BackgroundTransparency=1; espMasterLbl.Text="enable esp"; espMasterLbl.TextSize=13; espMasterLbl.Font=Enum.Font.ArialBold
+    espMasterLbl.BackgroundTransparency=1; espMasterLbl.Text="Enable ESP"; espMasterLbl.TextSize=13; espMasterLbl.Font=Enum.Font.GothamBold
     espMasterLbl.TextColor3=T.text; espMasterLbl.TextXAlignment=Enum.TextXAlignment.Left; espMasterLbl.Parent=espMasterCard
     local espMasterPill=Instance.new("Frame"); espMasterPill.Size=UDim2.new(0,40,0,22); espMasterPill.Position=UDim2.new(1,-52,0.5,-11)
     espMasterPill.BackgroundColor3=state.espEnabled and T.accent or T.border; espMasterPill.BorderSizePixel=0; espMasterPill.Parent=espMasterCard; corner(espMasterPill,11)
@@ -1767,12 +1844,12 @@ local function buildGUI()
     }
     for idx,opt in ipairs(ESP_OPTS) do
         local optCard=Instance.new("Frame"); optCard.Size=UDim2.new(1,0,0,44); optCard.LayoutOrder=idx+2
-        optCard.BackgroundColor3=T.card; optCard.BorderSizePixel=0; optCard.Parent=espPage; corner(optCard,14); stroke(optCard,T.border)
+        optCard.BackgroundColor3=T.card; optCard.BorderSizePixel=0; optCard.Parent=espPage; corner(optCard,8); stroke(optCard,T.border)
         local optNameL=Instance.new("TextLabel"); optNameL.Size=UDim2.new(1,-60,0,18); optNameL.Position=UDim2.new(0,12,0,5)
-        optNameL.BackgroundTransparency=1; optNameL.Text=opt.label; optNameL.TextSize=12; optNameL.Font=Enum.Font.ArialBold
+        optNameL.BackgroundTransparency=1; optNameL.Text=opt.label; optNameL.TextSize=12; optNameL.Font=Enum.Font.GothamBold
         optNameL.TextColor3=T.text; optNameL.TextXAlignment=Enum.TextXAlignment.Left; optNameL.Parent=optCard
         local optDescL=Instance.new("TextLabel"); optDescL.Size=UDim2.new(1,-60,0,13); optDescL.Position=UDim2.new(0,12,0,24)
-        optDescL.BackgroundTransparency=1; optDescL.Text=opt.desc; optDescL.TextSize=10; optDescL.Font=Enum.Font.Arial
+        optDescL.BackgroundTransparency=1; optDescL.Text=opt.desc; optDescL.TextSize=10; optDescL.Font=Enum.Font.Gotham
         optDescL.TextColor3=T.sub; optDescL.TextXAlignment=Enum.TextXAlignment.Left; optDescL.Parent=optCard
         local initVal=state[opt.key]
         local _optPill,setOptPill=makePillToggle(optCard,initVal,function(v) state[opt.key]=v; refreshAllESP(); saveAll() end)
@@ -1786,10 +1863,10 @@ local function buildGUI()
     local fovMasterCard=Instance.new("Frame"); fovMasterCard.Size=UDim2.new(1,0,0,44); fovMasterCard.LayoutOrder=9
     fovMasterCard.BackgroundColor3=T.card; fovMasterCard.BorderSizePixel=0; fovMasterCard.Parent=espPage; corner(fovMasterCard,8); stroke(fovMasterCard,T.border)
     local fovMasterLbl=Instance.new("TextLabel"); fovMasterLbl.Size=UDim2.new(1,-60,1,0); fovMasterLbl.Position=UDim2.new(0,12,0,0)
-    fovMasterLbl.BackgroundTransparency=1; fovMasterLbl.Text="👁  show fov circle"; fovMasterLbl.TextSize=13; fovMasterLbl.Font=Enum.Font.ArialBold
+    fovMasterLbl.BackgroundTransparency=1; fovMasterLbl.Text="👁  Show FOV Circle"; fovMasterLbl.TextSize=13; fovMasterLbl.Font=Enum.Font.GothamBold
     fovMasterLbl.TextColor3=T.text; fovMasterLbl.TextXAlignment=Enum.TextXAlignment.Left; fovMasterLbl.Parent=fovMasterCard
     local fovSubLbl=Instance.new("TextLabel"); fovSubLbl.Size=UDim2.new(1,-60,0,12); fovSubLbl.Position=UDim2.new(0,12,0,28)
-    fovSubLbl.BackgroundTransparency=1; fovSubLbl.Text="animated yellow ring on screen"; fovSubLbl.TextSize=9; fovSubLbl.Font=Enum.Font.Arial
+    fovSubLbl.BackgroundTransparency=1; fovSubLbl.Text="Animated yellow ring on screen"; fovSubLbl.TextSize=9; fovSubLbl.Font=Enum.Font.Gotham
     fovSubLbl.TextColor3=T.sub; fovSubLbl.TextXAlignment=Enum.TextXAlignment.Left; fovSubLbl.Parent=fovMasterCard
     local fovMasterPill=Instance.new("Frame"); fovMasterPill.Size=UDim2.new(0,40,0,22); fovMasterPill.Position=UDim2.new(1,-52,0.5,-11)
     fovMasterPill.BackgroundColor3=state.fovEnabled and T.yellow or T.border; fovMasterPill.BorderSizePixel=0; fovMasterPill.Parent=fovMasterCard; corner(fovMasterPill,11)
@@ -1821,7 +1898,7 @@ local function buildGUI()
     for _,sw in ipairs(COLOR_SWATCHES) do
         local swBtn=Instance.new("TextButton"); swBtn.Size=UDim2.new(1/#COLOR_SWATCHES,-5,1,0)
         swBtn.BackgroundColor3=Color3.fromRGB(sw.r,sw.g,sw.b); swBtn.BorderSizePixel=0; swBtn.Text=""
-        swBtn.AutoButtonColor=false; swBtn.Parent=colorRow; corner(swBtn,10)
+        swBtn.AutoButtonColor=false; swBtn.Parent=colorRow; corner(swBtn,6)
         local isActive=(sw.r==state.espR and sw.g==state.espG and sw.b==state.espB)
         if isActive then stroke(swBtn,Color3.fromRGB(255,255,255),2); selectedSwatch=swBtn end
         swBtn.MouseButton1Click:Connect(function()
@@ -1843,8 +1920,8 @@ local function buildGUI()
     local abDot=Instance.new("Frame"); abDot.Size=UDim2.new(0,8,0,8); abDot.Position=UDim2.new(0,12,0.5,-4)
     abDot.BackgroundColor3=T.blue; abDot.BorderSizePixel=0; abDot.Parent=abBanner; corner(abDot,4)
     local abBannerLbl=Instance.new("TextLabel"); abBannerLbl.Size=UDim2.new(1,-60,1,0); abBannerLbl.Position=UDim2.new(0,28,0,0)
-    abBannerLbl.BackgroundTransparency=1; abBannerLbl.Text="aimbot  ·  hold rmb to lock-on"
-    abBannerLbl.TextSize=11; abBannerLbl.Font=Enum.Font.ArialBold; abBannerLbl.TextColor3=T.blue
+    abBannerLbl.BackgroundTransparency=1; abBannerLbl.Text="AIMBOT  ·  Hold RMB to lock-on"
+    abBannerLbl.TextSize=11; abBannerLbl.Font=Enum.Font.GothamBold; abBannerLbl.TextColor3=T.blue
     abBannerLbl.TextXAlignment=Enum.TextXAlignment.Left; abBannerLbl.Parent=abBanner
 
     -- Enable toggle
@@ -1878,15 +1955,15 @@ local function buildGUI()
     -- Bone cycle card
     local abBoneOptions = {"Head","UpperTorso","HumanoidRootPart","Torso","LowerTorso"}
     local abBoneCard=Instance.new("Frame"); abBoneCard.Size=UDim2.new(1,0,0,44); abBoneCard.LayoutOrder=6
-    abBoneCard.BackgroundColor3=T.card; abBoneCard.BorderSizePixel=0; abBoneCard.Parent=aimbotPage; corner(abBoneCard,16)
+    abBoneCard.BackgroundColor3=T.card; abBoneCard.BorderSizePixel=0; abBoneCard.Parent=aimbotPage; corner(abBoneCard,10)
     local abStrokeC=Instance.new("UIStroke"); abStrokeC.Color=T.border; abStrokeC.Thickness=1; abStrokeC.Parent=abBoneCard
     local abBoneLbl=Instance.new("TextLabel"); abBoneLbl.Size=UDim2.new(1,-110,1,0); abBoneLbl.Position=UDim2.new(0,12,0,0)
-    abBoneLbl.BackgroundTransparency=1; abBoneLbl.Text="aim bone"; abBoneLbl.TextSize=12; abBoneLbl.Font=Enum.Font.Arial
+    abBoneLbl.BackgroundTransparency=1; abBoneLbl.Text="Aim Bone"; abBoneLbl.TextSize=12; abBoneLbl.Font=Enum.Font.Gotham
     abBoneLbl.TextColor3=T.text; abBoneLbl.TextXAlignment=Enum.TextXAlignment.Left; abBoneLbl.Parent=abBoneCard
     local abBoneBtn=Instance.new("TextButton"); abBoneBtn.Size=UDim2.new(0,110,0,28); abBoneBtn.Position=UDim2.new(1,-118,0.5,-14)
     abBoneBtn.BackgroundColor3=T.surface; abBoneBtn.BorderSizePixel=0; abBoneBtn.Text=state.aimbotBone
-    abBoneBtn.TextSize=11; abBoneBtn.Font=Enum.Font.ArialBold; abBoneBtn.TextColor3=T.blue
-    abBoneBtn.AutoButtonColor=false; abBoneBtn.Parent=abBoneCard; corner(abBoneBtn,10)
+    abBoneBtn.TextSize=11; abBoneBtn.Font=Enum.Font.GothamBold; abBoneBtn.TextColor3=T.blue
+    abBoneBtn.AutoButtonColor=false; abBoneBtn.Parent=abBoneCard; corner(abBoneBtn,6)
     local abBoneSt=Instance.new("UIStroke"); abBoneSt.Color=T.blueD; abBoneSt.Thickness=1; abBoneSt.Parent=abBoneBtn
     abBoneBtn.MouseButton1Click:Connect(function()
         local cur=state.aimbotBone; local idx=1
@@ -1908,8 +1985,8 @@ local function buildGUI()
     local tbDot=Instance.new("Frame"); tbDot.Size=UDim2.new(0,8,0,8); tbDot.Position=UDim2.new(0,12,0.5,-4)
     tbDot.BackgroundColor3=T.orange; tbDot.BorderSizePixel=0; tbDot.Parent=tbBanner; corner(tbDot,4)
     local tbBannerLbl=Instance.new("TextLabel"); tbBannerLbl.Size=UDim2.new(1,-60,1,0); tbBannerLbl.Position=UDim2.new(0,28,0,0)
-    tbBannerLbl.BackgroundTransparency=1; tbBannerLbl.Text="triggerbot  ·  auto-fire on crosshair overlap"
-    tbBannerLbl.TextSize=11; tbBannerLbl.Font=Enum.Font.ArialBold; tbBannerLbl.TextColor3=T.orange
+    tbBannerLbl.BackgroundTransparency=1; tbBannerLbl.Text="TRIGGERBOT  ·  Auto-fire on crosshair overlap"
+    tbBannerLbl.TextSize=11; tbBannerLbl.Font=Enum.Font.GothamBold; tbBannerLbl.TextColor3=T.orange
     tbBannerLbl.TextXAlignment=Enum.TextXAlignment.Left; tbBannerLbl.Parent=tbBanner
 
     -- Info card
@@ -1917,9 +1994,9 @@ local function buildGUI()
     tbInfo.BackgroundColor3=Color3.fromRGB(28,18,8); tbInfo.BorderSizePixel=0; tbInfo.Parent=triggerPage; corner(tbInfo,10)
     local tbInfoSt=Instance.new("UIStroke"); tbInfoSt.Color=Color3.fromRGB(80,40,10); tbInfoSt.Thickness=1; tbInfoSt.Parent=tbInfo
     local tbInfoLbl=Instance.new("TextLabel"); tbInfoLbl.Size=UDim2.new(1,-20,1,0); tbInfoLbl.Position=UDim2.new(0,10,0,0)
-    tbInfoLbl.BackgroundTransparency=1; tbInfoLbl.TextSize=10; tbInfoLbl.Font=Enum.Font.Arial
+    tbInfoLbl.BackgroundTransparency=1; tbInfoLbl.TextSize=10; tbInfoLbl.Font=Enum.Font.Gotham
     tbInfoLbl.TextColor3=T.orange; tbInfoLbl.TextXAlignment=Enum.TextXAlignment.Left; tbInfoLbl.TextWrapped=true
-    tbInfoLbl.Text="raycasts from your crosshair every frame. if the ray hits a player within the fov radius, it auto-fires after the set delay."
+    tbInfoLbl.Text="Raycasts from your crosshair every frame. If the ray hits a player within the FOV radius, it auto-fires after the set delay."
     tbInfoLbl.Parent=tbInfo
 
     -- Enable toggle
@@ -1942,19 +2019,137 @@ local function buildGUI()
         function(v) state.triggerFOV=v; saveAll() end, T.orange)
 
         -- ════════════════════════════════════════════════════════════════════
+    --  RAGEBOT PAGE
+    -- ════════════════════════════════════════════════════════════════════
+    sectionLabel(ragebotPage,"RAGEBOT",0)
+
+    -- Crimson banner
+    local rbBanner=Instance.new("Frame"); rbBanner.Size=UDim2.new(1,0,0,46); rbBanner.LayoutOrder=1
+    rbBanner.BackgroundColor3=T.rageD; rbBanner.BorderSizePixel=0; rbBanner.Parent=ragebotPage; corner(rbBanner,10)
+    local rbBannerSt=Instance.new("UIStroke"); rbBannerSt.Color=T.rage; rbBannerSt.Thickness=1.5; rbBannerSt.Parent=rbBanner
+    local rbDot=Instance.new("Frame"); rbDot.Size=UDim2.new(0,8,0,8); rbDot.Position=UDim2.new(0,12,0.5,-4)
+    rbDot.BackgroundColor3=T.rage; rbDot.BorderSizePixel=0; rbDot.Parent=rbBanner; corner(rbDot,4)
+    local rbBannerLbl=Instance.new("TextLabel"); rbBannerLbl.Size=UDim2.new(1,-60,1,0); rbBannerLbl.Position=UDim2.new(0,28,0,0)
+    rbBannerLbl.BackgroundTransparency=1; rbBannerLbl.Text="RAGEBOT  ·  Instant snap + auto-fire"
+    rbBannerLbl.TextSize=11; rbBannerLbl.Font=Enum.Font.GothamBold; rbBannerLbl.TextColor3=T.rage
+    rbBannerLbl.TextXAlignment=Enum.TextXAlignment.Left; rbBannerLbl.Parent=rbBanner
+
+    -- Warning
+    local rbWarn=Instance.new("Frame"); rbWarn.Size=UDim2.new(1,0,0,44); rbWarn.LayoutOrder=2
+    rbWarn.BackgroundColor3=Color3.fromRGB(38,10,10); rbWarn.BorderSizePixel=0; rbWarn.Parent=ragebotPage; corner(rbWarn,10)
+    local rbWarnSt=Instance.new("UIStroke"); rbWarnSt.Color=T.rageD; rbWarnSt.Thickness=1; rbWarnSt.Parent=rbWarn
+    local rbWarnLbl=Instance.new("TextLabel"); rbWarnLbl.Size=UDim2.new(1,-20,1,0); rbWarnLbl.Position=UDim2.new(0,10,0,0)
+    rbWarnLbl.BackgroundTransparency=1; rbWarnLbl.TextSize=10; rbWarnLbl.Font=Enum.Font.Gotham
+    rbWarnLbl.TextColor3=T.rage; rbWarnLbl.TextXAlignment=Enum.TextXAlignment.Left; rbWarnLbl.TextWrapped=true
+    rbWarnLbl.Text="⚠  Instant snap + auto-fire is highly detectable. Use at your own risk."
+    rbWarnLbl.Parent=rbWarn
+
+    -- Enable toggle
+    local _rbCard, _setRbPill = makeToggleCard(
+        ragebotPage,"💀  Enable Ragebot","Instant snap-to-target + automatic fire",
+        state.ragebotEnabled, 3, T.rage,
+        function(v)
+            state.ragebotEnabled = v
+            if v then startRagebot() else stopRagebot() end
+            saveAll()
+        end
+    )
+
+    -- ── Targeting ───────────────────────────────────────────────────────
+    local function rageSection(parent, text, order)
+        local f=Instance.new("Frame"); f.Size=UDim2.new(1,0,0,22); f.LayoutOrder=order
+        f.BackgroundColor3=Color3.fromRGB(28,6,6); f.BorderSizePixel=0; f.Parent=parent; corner(f,6)
+        local fSt=Instance.new("UIStroke"); fSt.Color=T.rageD; fSt.Thickness=1; fSt.Parent=f
+        local l=Instance.new("TextLabel"); l.Size=UDim2.new(1,-16,1,0); l.Position=UDim2.new(0,10,0,0)
+        l.BackgroundTransparency=1; l.Text="▸  "..text; l.TextSize=10; l.Font=Enum.Font.GothamBold
+        l.TextColor3=T.rage; l.TextXAlignment=Enum.TextXAlignment.Left; l.Parent=f
+    end
+
+    local function makeCycleCard(parent, labelText, options, getVal, setVal, accentCol, order)
+        local ac = accentCol or T.accent
+        local card=Instance.new("Frame"); card.Size=UDim2.new(1,0,0,44); card.LayoutOrder=order or 0
+        card.BackgroundColor3=T.card; card.BorderSizePixel=0; card.Parent=parent; corner(card,10)
+        local cSt=Instance.new("UIStroke"); cSt.Color=T.border; cSt.Thickness=1; cSt.Parent=card
+        local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-120,1,0); lbl.Position=UDim2.new(0,12,0,0)
+        lbl.BackgroundTransparency=1; lbl.Text=labelText; lbl.TextSize=12; lbl.Font=Enum.Font.Gotham
+        lbl.TextColor3=T.text; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=card
+        local vBtn=Instance.new("TextButton"); vBtn.Size=UDim2.new(0,110,0,28); vBtn.Position=UDim2.new(1,-118,0.5,-14)
+        vBtn.BackgroundColor3=T.surface; vBtn.BorderSizePixel=0; vBtn.Text=tostring(getVal())
+        vBtn.TextSize=11; vBtn.Font=Enum.Font.GothamBold; vBtn.TextColor3=ac
+        vBtn.AutoButtonColor=false; vBtn.Parent=card; corner(vBtn,6)
+        local vBtnSt=Instance.new("UIStroke"); vBtnSt.Color=Color3.fromRGB(math.floor(ac.R*255*0.5),math.floor(ac.G*255*0.5),math.floor(ac.B*255*0.5)); vBtnSt.Thickness=1; vBtnSt.Parent=vBtn
+        vBtn.MouseButton1Click:Connect(function()
+            local cur=getVal(); local idx=1
+            for i,v in ipairs(options) do if v==cur then idx=i; break end end
+            idx=(idx % #options)+1; setVal(options[idx]); vBtn.Text=options[idx]; saveAll()
+        end)
+        card.MouseEnter:Connect(function() tw(card,{BackgroundColor3=T.cardH}) end)
+        card.MouseLeave:Connect(function() tw(card,{BackgroundColor3=T.card}) end)
+        return card
+    end
+
+    rageSection(ragebotPage,"TARGETING",4)
+
+    makeCycleCard(ragebotPage,"Target Priority",
+        {"Closest","Lowest HP","Highest HP","Nearest Dist","Random"},
+        function() return state.ragebotTargetMode end,
+        function(v) state.ragebotTargetMode=v end,
+        T.rage, 5)
+
+    makeCycleCard(ragebotPage,"Hit Bone",
+        {"Head","UpperTorso","HumanoidRootPart","Torso","LowerTorso"},
+        function() return state.ragebotBone end,
+        function(v) state.ragebotBone=v end,
+        T.rage, 6)
+
+    rageSection(ragebotPage,"ACCURACY",7)
+
+    makeSlider(ragebotPage,"HITCHANCE  (%)",1,100,state.ragebotHitchance,
+        function(v) state.ragebotHitchance=v; saveAll() end, T.rage)
+
+    makeSlider(ragebotPage,"FIRE DELAY  (ms)",0,500,state.ragebotDelay,
+        function(v) state.ragebotDelay=v; saveAll() end, T.rage)
+
+    rageSection(ragebotPage,"EXPLOITS",8)
+
+    -- Doubleshot toggle
+    local _rbDsCard, _setRbDsPill = makeToggleCard(
+        ragebotPage,"⚡  Double Shot","Fire twice per trigger cycle (0.05 s gap)",
+        state.ragebotDoubleshot, 9, T.rage,
+        function(v) state.ragebotDoubleshot=v; saveAll() end
+    )
+
+    -- Velocity prediction toggle
+    local _rbPredCard, _setRbPredPill = makeToggleCard(
+        ragebotPage,"🔮  Velocity Prediction","Lead target using HRP AssemblyLinearVelocity",
+        state.ragebotPrediction, 10, T.rage,
+        function(v) state.ragebotPrediction=v; saveAll() end
+    )
+
+    -- Prediction info card
+    local rbPredInfo=Instance.new("Frame"); rbPredInfo.Size=UDim2.new(1,0,0,56); rbPredInfo.LayoutOrder=11
+    rbPredInfo.BackgroundColor3=Color3.fromRGB(28,8,8); rbPredInfo.BorderSizePixel=0; rbPredInfo.Parent=ragebotPage; corner(rbPredInfo,10)
+    local rbPredSt=Instance.new("UIStroke"); rbPredSt.Color=T.rageD; rbPredSt.Thickness=1; rbPredSt.Parent=rbPredInfo
+    local rbPredLbl=Instance.new("TextLabel"); rbPredLbl.Size=UDim2.new(1,-20,1,0); rbPredLbl.Position=UDim2.new(0,10,0,0)
+    rbPredLbl.BackgroundTransparency=1; rbPredLbl.TextSize=10; rbPredLbl.Font=Enum.Font.Gotham
+    rbPredLbl.TextColor3=T.sub; rbPredLbl.TextXAlignment=Enum.TextXAlignment.Left; rbPredLbl.TextWrapped=true
+    rbPredLbl.Text="Adds the target's velocity × estimated bullet travel time to the aim position. Assumes ~300 stud/s bullet speed."
+    rbPredLbl.Parent=rbPredInfo
+
+    -- ════════════════════════════════════════════════════════════════════
     --  SETTINGS PAGE
     -- ════════════════════════════════════════════════════════════════════
     sectionLabel(settingsPage,"KEYBINDS",0)
 
     local function makeKeybindCard(parent,descText,getKey,setKey,getBusy,setBusy,order)
         local kbCard=Instance.new("Frame"); kbCard.Size=UDim2.new(1,0,0,44); kbCard.LayoutOrder=order or 0
-        kbCard.BackgroundColor3=T.card; kbCard.BorderSizePixel=0; kbCard.Parent=parent; corner(kbCard,14); stroke(kbCard,T.border)
+        kbCard.BackgroundColor3=T.card; kbCard.BorderSizePixel=0; kbCard.Parent=parent; corner(kbCard,8); stroke(kbCard,T.border)
         local kbDesc=Instance.new("TextLabel"); kbDesc.Size=UDim2.new(1,-110,1,0); kbDesc.Position=UDim2.new(0,12,0,0)
-        kbDesc.BackgroundTransparency=1; kbDesc.Text=descText; kbDesc.TextSize=12; kbDesc.Font=Enum.Font.Arial; kbDesc.TextColor3=T.text
+        kbDesc.BackgroundTransparency=1; kbDesc.Text=descText; kbDesc.TextSize=12; kbDesc.Font=Enum.Font.Gotham; kbDesc.TextColor3=T.text
         kbDesc.TextXAlignment=Enum.TextXAlignment.Left; kbDesc.Parent=kbCard
         local kbBtn=Instance.new("TextButton"); kbBtn.Size=UDim2.new(0,90,0,28); kbBtn.Position=UDim2.new(1,-98,0.5,-14)
-        kbBtn.BackgroundColor3=T.surface; kbBtn.BorderSizePixel=0; kbBtn.Text=getKey().Name; kbBtn.TextSize=11; kbBtn.Font=Enum.Font.ArialBold
-        kbBtn.TextColor3=T.accent; kbBtn.AutoButtonColor=false; kbBtn.Parent=kbCard; corner(kbBtn,10); stroke(kbBtn,T.accentD)
+        kbBtn.BackgroundColor3=T.surface; kbBtn.BorderSizePixel=0; kbBtn.Text=getKey().Name; kbBtn.TextSize=11; kbBtn.Font=Enum.Font.GothamBold
+        kbBtn.TextColor3=T.accent; kbBtn.AutoButtonColor=false; kbBtn.Parent=kbCard; corner(kbBtn,6); stroke(kbBtn,T.accentD)
         kbBtn.MouseEnter:Connect(function() if not getBusy() then tw(kbBtn,{BackgroundColor3=T.card}) end end)
         kbBtn.MouseLeave:Connect(function() if not getBusy() then tw(kbBtn,{BackgroundColor3=T.surface}) end end)
         kbBtn.MouseButton1Click:Connect(function()
@@ -1989,22 +2184,22 @@ local function buildGUI()
 
     sectionLabel(settingsPage,"FILE",3)
     local fileCard=Instance.new("Frame"); fileCard.Size=UDim2.new(1,0,0,44); fileCard.LayoutOrder=4
-    fileCard.BackgroundColor3=T.card; fileCard.BorderSizePixel=0; fileCard.Parent=settingsPage; corner(fileCard,14); stroke(fileCard,T.border)
+    fileCard.BackgroundColor3=T.card; fileCard.BorderSizePixel=0; fileCard.Parent=settingsPage; corner(fileCard,8); stroke(fileCard,T.border)
     local fileTitle_=Instance.new("TextLabel"); fileTitle_.Size=UDim2.new(1,-20,0,20); fileTitle_.Position=UDim2.new(0,12,0,6)
-    fileTitle_.BackgroundTransparency=1; fileTitle_.Text="preset + settings storage"; fileTitle_.TextSize=12; fileTitle_.Font=Enum.Font.ArialBold
+    fileTitle_.BackgroundTransparency=1; fileTitle_.Text="Preset + Settings Storage"; fileTitle_.TextSize=12; fileTitle_.Font=Enum.Font.GothamBold
     fileTitle_.TextColor3=T.text; fileTitle_.TextXAlignment=Enum.TextXAlignment.Left; fileTitle_.Parent=fileCard
     local fileSub_=Instance.new("TextLabel"); fileSub_.Size=UDim2.new(1,-20,0,14); fileSub_.Position=UDim2.new(0,12,0,26)
     fileSub_.BackgroundTransparency=1
     fileSub_.Text=(writefile and isfile) and "● Saving to FakePosPresets.json" or "● writefile unavailable — session only"
-    fileSub_.TextSize=10; fileSub_.Font=Enum.Font.Arial
+    fileSub_.TextSize=10; fileSub_.Font=Enum.Font.Gotham
     fileSub_.TextColor3=(writefile and isfile) and T.accent or T.red
     fileSub_.TextXAlignment=Enum.TextXAlignment.Left; fileSub_.Parent=fileCard
 
     sectionLabel(settingsPage,"DANGER ZONE",5)
     local unloadBtn=Instance.new("TextButton"); unloadBtn.Size=UDim2.new(1,0,0,40); unloadBtn.LayoutOrder=6
     unloadBtn.BackgroundColor3=Color3.fromRGB(50,14,14); unloadBtn.BorderSizePixel=0
-    unloadBtn.Text="⏏  unload ui  (destroys everything)"; unloadBtn.TextSize=12; unloadBtn.Font=Enum.Font.ArialBold
-    unloadBtn.TextColor3=T.red; unloadBtn.AutoButtonColor=false; unloadBtn.Parent=settingsPage; corner(unloadBtn,14)
+    unloadBtn.Text="⏏  Unload UI  (destroys everything)"; unloadBtn.TextSize=12; unloadBtn.Font=Enum.Font.GothamBold
+    unloadBtn.TextColor3=T.red; unloadBtn.AutoButtonColor=false; unloadBtn.Parent=settingsPage; corner(unloadBtn,8)
     stroke(unloadBtn,T.red,1)
     unloadBtn.MouseEnter:Connect(function() tw(unloadBtn,{BackgroundColor3=Color3.fromRGB(72,18,18)}) end)
     unloadBtn.MouseLeave:Connect(function() tw(unloadBtn,{BackgroundColor3=Color3.fromRGB(50,14,14)}) end)
@@ -2015,7 +2210,7 @@ local function buildGUI()
             tw(unloadBtn,{BackgroundColor3=Color3.fromRGB(100,30,10)})
             if unloadTimer then task.cancel(unloadTimer) end
             unloadTimer=task.delay(3,function()
-                unloadConfirm=false; unloadBtn.Text="⏏  unload ui  (destroys everything)"
+                unloadConfirm=false; unloadBtn.Text="⏏  Unload UI  (destroys everything)"
                 tw(unloadBtn,{BackgroundColor3=Color3.fromRGB(50,14,14)})
             end)
         else
@@ -2029,11 +2224,11 @@ local function buildGUI()
     local spNameBox=Instance.new("TextBox"); spNameBox.Size=UDim2.new(1,-82,1,-10); spNameBox.Position=UDim2.new(0,10,0,5)
     spNameBox.BackgroundColor3=T.surface; spNameBox.BorderSizePixel=0; spNameBox.PlaceholderText="Preset name..."
     spNameBox.PlaceholderColor3=T.sub; spNameBox.Text=""; spNameBox.TextColor3=T.text; spNameBox.TextSize=12
-    spNameBox.Font=Enum.Font.Arial; spNameBox.ClearTextOnFocus=false; spNameBox.Parent=spSaveRow; corner(spNameBox,10)
+    spNameBox.Font=Enum.Font.Gotham; spNameBox.ClearTextOnFocus=false; spNameBox.Parent=spSaveRow; corner(spNameBox,6)
     local spSaveBtn=Instance.new("TextButton"); spSaveBtn.Size=UDim2.new(0,64,1,-10); spSaveBtn.Position=UDim2.new(1,-72,0,5)
-    spSaveBtn.BackgroundColor3=T.accent; spSaveBtn.BorderSizePixel=0; spSaveBtn.Text="save"
-    spSaveBtn.TextColor3=Color3.fromRGB(14,14,14); spSaveBtn.TextSize=12; spSaveBtn.Font=Enum.Font.ArialBold
-    spSaveBtn.AutoButtonColor=false; spSaveBtn.Parent=spSaveRow; corner(spSaveBtn,10)
+    spSaveBtn.BackgroundColor3=T.accent; spSaveBtn.BorderSizePixel=0; spSaveBtn.Text="Save"
+    spSaveBtn.TextColor3=Color3.fromRGB(14,14,14); spSaveBtn.TextSize=12; spSaveBtn.Font=Enum.Font.GothamBold
+    spSaveBtn.AutoButtonColor=false; spSaveBtn.Parent=spSaveRow; corner(spSaveBtn,6)
     spSaveBtn.MouseEnter:Connect(function() tw(spSaveBtn,{BackgroundColor3=T.accentH}) end)
     spSaveBtn.MouseLeave:Connect(function() tw(spSaveBtn,{BackgroundColor3=T.accent}) end)
 
@@ -2063,11 +2258,11 @@ local function buildGUI()
         for _,r in pairs(spRows) do r:Destroy() end; spRows={}
         for i,sp in ipairs(settingsPresets) do
             local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,38); row.LayoutOrder=i
-            row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=spFrame; corner(row,14); table.insert(spRows,row)
+            row.BackgroundColor3=T.card; row.BorderSizePixel=0; row.Parent=spFrame; corner(row,8); table.insert(spRows,row)
             local applyBtn=Instance.new("TextButton"); applyBtn.Size=UDim2.new(1,-50,1,0); applyBtn.BackgroundTransparency=1
             applyBtn.AutoButtonColor=false; applyBtn.TextXAlignment=Enum.TextXAlignment.Left; applyBtn.Parent=row
             local nameLbl=Instance.new("TextLabel"); nameLbl.Size=UDim2.new(1,0,1,0)
-            nameLbl.BackgroundTransparency=1; nameLbl.Text=sp.name; nameLbl.TextSize=12; nameLbl.Font=Enum.Font.ArialBold
+            nameLbl.BackgroundTransparency=1; nameLbl.Text=sp.name; nameLbl.TextSize=12; nameLbl.Font=Enum.Font.GothamBold
             nameLbl.TextColor3=T.accent; nameLbl.TextXAlignment=Enum.TextXAlignment.Left; nameLbl.Parent=applyBtn
             local lp=Instance.new("UIPadding"); lp.PaddingLeft=UDim.new(0,10); lp.Parent=nameLbl
             applyBtn.MouseButton1Click:Connect(function()
@@ -2076,7 +2271,7 @@ local function buildGUI()
             end)
             local delBtn=Instance.new("TextButton"); delBtn.Size=UDim2.new(0,26,0,26); delBtn.Position=UDim2.new(1,-34,0.5,-13)
             delBtn.BackgroundColor3=T.red; delBtn.BorderSizePixel=0; delBtn.Text="✕"; delBtn.TextColor3=Color3.fromRGB(255,255,255)
-            delBtn.TextSize=10; delBtn.Font=Enum.Font.ArialBold; delBtn.AutoButtonColor=false; delBtn.Parent=row; corner(delBtn,8)
+            delBtn.TextSize=10; delBtn.Font=Enum.Font.GothamBold; delBtn.AutoButtonColor=false; delBtn.Parent=row; corner(delBtn,5)
             delBtn.MouseEnter:Connect(function() tw(delBtn,{BackgroundColor3=T.redH}) end)
             delBtn.MouseLeave:Connect(function() tw(delBtn,{BackgroundColor3=T.red}) end)
             local ci=i; delBtn.MouseButton1Click:Connect(function() table.remove(settingsPresets,ci); saveAll(); rebuildSPRows() end)
@@ -2102,7 +2297,7 @@ local function buildGUI()
         })
         saveAll(); spNameBox.Text=""
         spSaveBtn.Text="✓"; tw(spSaveBtn,{BackgroundColor3=T.accentH})
-        task.delay(0.8,function() spSaveBtn.Text="save"; tw(spSaveBtn,{BackgroundColor3=T.accent}) end)
+        task.delay(0.8,function() spSaveBtn.Text="Save"; tw(spSaveBtn,{BackgroundColor3=T.accent}) end)
         rebuildSPRows()
     end)
     rebuildSPRows()
@@ -2114,7 +2309,7 @@ local function buildGUI()
     local mobileBtn=Instance.new("TextButton"); mobileBtn.Name="MobileToggle"
     mobileBtn.Size=UDim2.new(0,MB_SIZE,0,MB_SIZE); mobileBtn.Position=UDim2.new(1,-(MB_SIZE+14),1,-(MB_SIZE+14))
     mobileBtn.BackgroundColor3=T.accentD; mobileBtn.BorderSizePixel=0; mobileBtn.Text="⟁"
-    mobileBtn.TextSize=20; mobileBtn.Font=Enum.Font.ArialBold; mobileBtn.TextColor3=T.text
+    mobileBtn.TextSize=20; mobileBtn.Font=Enum.Font.GothamBold; mobileBtn.TextColor3=T.text
     mobileBtn.AutoButtonColor=false; mobileBtn.ZIndex=20; mobileBtn.Parent=gui; corner(mobileBtn,MB_SIZE/2); stroke(mobileBtn,T.accent,1.5)
     local function pulseMB()
         tw(mobileBtn,{BackgroundColor3=T.accent}); task.delay(0.55,function() tw(mobileBtn,{BackgroundColor3=T.accentD}); task.delay(0.58,pulseMB) end)
@@ -2155,6 +2350,7 @@ local function init()
     if state.noclipEnabled  then startNoclip()  end
     if state.aimbotEnabled  then startAimbot()  end
     if state.triggerEnabled then startTriggerbot() end
+    if state.ragebotEnabled then startRagebot()   end
 end
 
 init()
