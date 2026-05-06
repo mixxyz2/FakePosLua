@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
---  Fake Position Spoof  ·  v6.0
+--  Fake Position Spoof  ·  v16.0
 --  ✦ Minecraft font (Enum.Font.Code monospace) — all lowercase labels
 --  ✦ Resizable window  (drag bottom-right corner handle)
 --  ✦ Proper rounded corners  (clip layer pattern, no visual square edges)
@@ -26,7 +26,6 @@ local state = {
     guiKey   = Enum.KeyCode.RightShift,
     fovEnabled = false,
     fovRange   = 60,
-    accentIndex = 1,
 }
 
 local targeted     = {}
@@ -39,21 +38,6 @@ local spoofBasePos = Vector3.zero
 -- ════════════════════════════════════════════════════════════════════════════
 --  THEME
 -- ════════════════════════════════════════════════════════════════════════════
-local ACCENT_PRESETS = {
-    { name="green",  accent=Color3.fromRGB(122,186,136), accentH=Color3.fromRGB(150,210,163), accentD=Color3.fromRGB(68,118,80)  },
-    { name="blue",   accent=Color3.fromRGB( 90,150,220), accentH=Color3.fromRGB(120,175,245), accentD=Color3.fromRGB(50, 95,150) },
-    { name="purple", accent=Color3.fromRGB(160,100,220), accentH=Color3.fromRGB(185,130,245), accentD=Color3.fromRGB(100,55,155) },
-    { name="red",    accent=Color3.fromRGB(210, 70, 70), accentH=Color3.fromRGB(235,100,100), accentD=Color3.fromRGB(140,35,35)  },
-    { name="orange", accent=Color3.fromRGB(220,140, 50), accentH=Color3.fromRGB(245,165, 80), accentD=Color3.fromRGB(150, 85,20) },
-    { name="pink",   accent=Color3.fromRGB(220,100,160), accentH=Color3.fromRGB(245,130,190), accentD=Color3.fromRGB(150,50,100) },
-    { name="white",  accent=Color3.fromRGB(210,210,210), accentH=Color3.fromRGB(240,240,240), accentD=Color3.fromRGB(130,130,130) },
-}
-local function applyAccent(idx)
-    local p = ACCENT_PRESETS[idx]; if not p then return end
-    state.accentIndex = idx
-    T.accent = p.accent; T.accentH = p.accentH; T.accentD = p.accentD
-end
-
 local T = {
     bg      = Color3.fromRGB(13,  13,  13),
     surface = Color3.fromRGB(19,  19,  19),
@@ -72,8 +56,8 @@ local T = {
 }
 
 -- Closest to Minecraft font available in Roblox (monospace pixel-style)
-local FONT      = Enum.Font.Code
-local FONT_BOLD = Enum.Font.Code
+local FONT      = Enum.Font.Arial
+local FONT_BOLD = Enum.Font.ArialBold
 
 -- ════════════════════════════════════════════════════════════════════════════
 --  COLLISION FIX
@@ -97,10 +81,10 @@ local function jsonStr(src, key) return src:match('"'..key..'":"([^"]*)"') end
 
 local function serSettings()
     return string.format(
-        '{"spoofKey":"%s","guiKey":"%s","stickEnabled":%s,"fovEnabled":%s,"fovRange":%d,"accentIndex":%d}',
+        '{"spoofKey":"%s","guiKey":"%s","stickEnabled":%s,"fovEnabled":%s,"fovRange":%d}',
         state.spoofKey.Name, state.guiKey.Name,
         tostring(state.stickEnabled),
-        tostring(state.fovEnabled), state.fovRange, state.accentIndex
+        tostring(state.fovEnabled), state.fovRange
     )
 end
 
@@ -133,8 +117,6 @@ local function loadAll()
         state.stickEnabled = (sb:match('"stickEnabled":(%a+)') or "false") == "true"
         state.fovEnabled   = (sb:match('"fovEnabled":(%a+)')   or "false") == "true"
         state.fovRange     = jsonNum(sb,"fovRange") or state.fovRange
-        state.accentIndex  = jsonNum(sb,"accentIndex") or state.accentIndex
-        applyAccent(state.accentIndex)
     end) end
     if pb then pcall(function()
         for e in pb:gmatch("{(.-)}") do
@@ -315,7 +297,7 @@ local function makeSlider(parent, lText, minV, maxV, defV, onChange, accentColor
 
     local resetBtn = Instance.new("TextButton"); resetBtn.Size = UDim2.new(0.18,-2,1,2)
     resetBtn.Position = UDim2.new(0.82,2,0,-1); resetBtn.BackgroundColor3 = T.surface
-    resetBtn.BorderSizePixel = 0; resetBtn.Text = "↶"; resetBtn.TextColor3 = T.sub
+    resetBtn.BorderSizePixel = 0; resetBtn.Text = "↺"; resetBtn.TextColor3 = T.sub
     resetBtn.TextSize = 13; resetBtn.Font = FONT_BOLD; resetBtn.AutoButtonColor = false
     resetBtn.ZIndex = 6; resetBtn.Parent = hdr
     corner(resetBtn,5); stroke(resetBtn,T.accentD,1)
@@ -598,7 +580,7 @@ local function buildGUI()
 
     local resetBtn = Instance.new("TextButton"); resetBtn.Size = UDim2.new(1,0,0,34)
     resetBtn.BackgroundColor3 = T.card; resetBtn.BorderSizePixel = 0
-    resetBtn.Text = "↶   reset  ( 0 / 1000 / 0 )"
+    resetBtn.Text = "↺   reset  ( 0 / 1000 / 0 )"
     resetBtn.TextSize = 12; resetBtn.Font = FONT; resetBtn.TextColor3 = T.sub
     resetBtn.AutoButtonColor = false; resetBtn.Parent = offsetPage
     corner(resetBtn,8); stroke(resetBtn,T.border)
@@ -925,37 +907,8 @@ local function buildGUI()
     makeSlider(settingsPage,"fov range",5,180,state.fovRange,function(v) state.fovRange=v; saveAll() end, T.yellow)
 
     -- File info
-    sectionLabel(settingsPage,"accent color",5)
-    local swatchRow = Instance.new("Frame"); swatchRow.Size = UDim2.new(1,0,0,44); swatchRow.LayoutOrder = 6
-    swatchRow.BackgroundColor3 = T.card; swatchRow.BorderSizePixel = 0; swatchRow.Parent = settingsPage
-    corner(swatchRow,8); stroke(swatchRow,T.border)
-    local swList = Instance.new("UIListLayout"); swList.FillDirection = Enum.FillDirection.Horizontal
-    swList.SortOrder = Enum.SortOrder.LayoutOrder; swList.Padding = UDim.new(0,8)
-    swList.VerticalAlignment = Enum.VerticalAlignment.Center
-    swList.HorizontalAlignment = Enum.HorizontalAlignment.Center; swList.Parent = swatchRow
-    local swatchBtns = {}
-    local function refreshSwatches()
-        for i, btn in ipairs(swatchBtns) do
-            local sel = (i == state.accentIndex)
-            btn.Size = sel and UDim2.new(0,27,0,27) or UDim2.new(0,22,0,22)
-        end
-    end
-    for i, preset in ipairs(ACCENT_PRESETS) do
-        local btn = Instance.new("TextButton"); btn.Size = UDim2.new(0,22,0,22)
-        btn.BackgroundColor3 = preset.accent; btn.BorderSizePixel = 0
-        btn.Text = ""; btn.AutoButtonColor = false; btn.LayoutOrder = i; btn.Parent = swatchRow
-        corner(btn,11)
-        btn.MouseButton1Click:Connect(function()
-            applyAccent(i); refreshSwatches(); saveAll()
-        end)
-        btn.MouseEnter:Connect(function() btn.Size = UDim2.new(0,27,0,27) end)
-        btn.MouseLeave:Connect(function() refreshSwatches() end)
-        swatchBtns[i] = btn
-    end
-    refreshSwatches()
-
-    sectionLabel(settingsPage,"file",7)
-    local fileCard = Instance.new("Frame"); fileCard.Size = UDim2.new(1,0,0,44); fileCard.LayoutOrder = 8
+    sectionLabel(settingsPage,"file",6)
+    local fileCard = Instance.new("Frame"); fileCard.Size = UDim2.new(1,0,0,44); fileCard.LayoutOrder = 7
     fileCard.BackgroundColor3 = T.card; fileCard.BorderSizePixel = 0; fileCard.Parent = settingsPage
     corner(fileCard,8); stroke(fileCard,T.border)
     local fTitle = Instance.new("TextLabel"); fTitle.Size = UDim2.new(1,-20,0,20); fTitle.Position = UDim2.new(0,12,0,6)
@@ -969,8 +922,8 @@ local function buildGUI()
     fSub.TextColor3 = (writefile and isfile) and T.accent or T.red; fSub.Parent = fileCard
 
     -- Danger zone
-    sectionLabel(settingsPage,"danger zone",9)
-    local unloadBtn = Instance.new("TextButton"); unloadBtn.Size = UDim2.new(1,0,0,40); unloadBtn.LayoutOrder = 10
+    sectionLabel(settingsPage,"danger zone",8)
+    local unloadBtn = Instance.new("TextButton"); unloadBtn.Size = UDim2.new(1,0,0,40); unloadBtn.LayoutOrder = 9
     unloadBtn.BackgroundColor3 = Color3.fromRGB(50,14,14); unloadBtn.BorderSizePixel = 0
     unloadBtn.Text = "⏏  unload ui  (destroys everything)"; unloadBtn.TextSize = 12; unloadBtn.Font = FONT_BOLD
     unloadBtn.TextColor3 = T.red; unloadBtn.AutoButtonColor = false; unloadBtn.Parent = settingsPage
