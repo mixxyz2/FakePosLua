@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
---  Fake Position Spoof  ·  Matcha UI  ·  v9.0
+--  Fake Position Spoof  ·  Matcha UI  ·  v10.0
 --  ✦ Title-bar drag only
 --  ✦ X / Y / Z slider + inline type-to-edit  (range ±150,000)
 --  ✦ Per-slider reset buttons on every property
@@ -15,7 +15,7 @@
 --  ✦ Persistent spoofKey + guiKey + esp settings
 --  ✦ Unified save file with settings + presets blocks
 --  ✦ Faraway + Origin presets
---  ✦ Player search on Targets + OrbTargets tabs          [NEW v9]
+--  ✦ Player search on Targets + OrbTargets tabs          [NEW v8]
 -- ════════════════════════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -107,6 +107,14 @@ local state = {
     silentEnabled = false,
     silentFOV     = 200,
     silentBone    = "Head",
+    -- Ragebot
+    ragebotEnabled    = false,
+    ragebotHitchance  = 100,
+    ragebotBone       = "Head",
+    ragebotTargetMode = "Closest",
+    ragebotDoubleshot = false,
+    ragebotPrediction = false,
+    ragebotDelay      = 80,
     -- FOV Visualizer
     fovEnabled  = false,
     fovRange    = 60,
@@ -120,6 +128,8 @@ local orbitConn        = nil
 local flyConn          = nil
 local noclipConn       = nil
 local aimbotConn       = nil
+local ragebotConn      = nil
+local ragebotFiring    = false
 local silentHooked     = false
 local silentOrigCF     = nil
 local guiRef           = nil
@@ -148,6 +158,9 @@ local T = {
     blueD   = Color3.fromRGB(40,   80, 140),
     purple  = Color3.fromRGB(160, 100, 220),
     purpleD = Color3.fromRGB(80,   50, 120),
+    rage    = Color3.fromRGB(210,  40,  40),
+    rageD   = Color3.fromRGB( 50,  10,  10),
+    rageH   = Color3.fromRGB(240,  70,  70),
 }
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -159,7 +172,7 @@ end
 
 local function serSettings()
     return string.format(
-        '{"spoofKey":"%s","guiKey":"%s","espEnabled":%s,"espR":%d,"espG":%d,"espB":%d,"espBox":%s,"espName":%s,"espHealth":%s,"espDist":%s,"espTracer":%s,"randomDir":%s,"flySpeed":%d,"flyHeight":%d,"fovEnabled":%s,"fovRange":%d,"orbitSpeed":%d,"orbitDistance":%d,"orbitHeight":%d,"orbitReverse":%s,"aimbotEnabled":%s,"aimbotFOV":%d,"aimbotSmooth":%d,"aimbotBone":"%s","aimbotHoldRMB":%s,"silentEnabled":%s,"silentFOV":%d,"silentBone":"%s"}',
+        '{"spoofKey":"%s","guiKey":"%s","espEnabled":%s,"espR":%d,"espG":%d,"espB":%d,"espBox":%s,"espName":%s,"espHealth":%s,"espDist":%s,"espTracer":%s,"randomDir":%s,"flySpeed":%d,"flyHeight":%d,"fovEnabled":%s,"fovRange":%d,"orbitSpeed":%d,"orbitDistance":%d,"orbitHeight":%d,"orbitReverse":%s,"aimbotEnabled":%s,"aimbotFOV":%d,"aimbotSmooth":%d,"aimbotBone":"%s","aimbotHoldRMB":%s,"silentEnabled":%s,"silentFOV":%d,"silentBone":"%s","ragebotEnabled":%s,"ragebotHitchance":%d,"ragebotBone":"%s","ragebotTargetMode":"%s","ragebotDoubleshot":%s,"ragebotPrediction":%s,"ragebotDelay":%d}',
         state.spoofKey.Name, state.guiKey.Name,
         tostring(state.espEnabled),
         state.espR, state.espG, state.espB,
@@ -172,7 +185,10 @@ local function serSettings()
         tostring(state.orbitReverse),
         tostring(state.aimbotEnabled), state.aimbotFOV, state.aimbotSmooth, state.aimbotBone,
         tostring(state.aimbotHoldRMB),
-        tostring(state.silentEnabled), state.silentFOV, state.silentBone
+        tostring(state.silentEnabled), state.silentFOV, state.silentBone,
+        tostring(state.ragebotEnabled), state.ragebotHitchance, state.ragebotBone,
+        state.ragebotTargetMode, tostring(state.ragebotDoubleshot),
+        tostring(state.ragebotPrediction), state.ragebotDelay
     )
 end
 
@@ -736,6 +752,110 @@ local function startAimbot()
 end
 
 -- ════════════════════════════════════════════════════════════════════════════
+--  RAGEBOT ENGINE
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- Target-selection helpers
+local function getRagebotTarget()
+    local mode = state.ragebotTargetMode
+    local cam  = workspace.CurrentCamera
+    local camPos = cam.CFrame.Position
+
+    local candidates = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local bone = p.Character:FindFirstChild(state.ragebotBone)
+                          or p.Character:FindFirstChild("Head")
+                          or p.Character:FindFirstChild("HumanoidRootPart")
+                if bone then
+                    local sp, onScreen = cam:WorldToViewportPoint(bone.Position)
+                    if onScreen then
+                        candidates[#candidates+1] = {
+                            player  = p,
+                            bone    = bone,
+                            hp      = hum.Health,
+                            dist    = (camPos - bone.Position).Magnitude,
+                            screenDist = (Vector2.new(sp.X, sp.Y) - Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)).Magnitude,
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    if #candidates == 0 then return nil end
+
+    if mode == "Closest" then
+        table.sort(candidates, function(a,b) return a.screenDist < b.screenDist end)
+    elseif mode == "Lowest HP" then
+        table.sort(candidates, function(a,b) return a.hp < b.hp end)
+    elseif mode == "Highest HP" then
+        table.sort(candidates, function(a,b) return a.hp > b.hp end)
+    elseif mode == "Random" then
+        local i = math.random(1, #candidates)
+        return candidates[i].player, candidates[i].bone
+    elseif mode == "Nearest Dist" then
+        table.sort(candidates, function(a,b) return a.dist < b.dist end)
+    end
+
+    return candidates[1].player, candidates[1].bone
+end
+
+local function stopRagebot()
+    if ragebotConn then ragebotConn:Disconnect(); ragebotConn = nil end
+    ragebotFiring = false
+end
+
+local function startRagebot()
+    stopRagebot()
+    ragebotConn = RunService.Heartbeat:Connect(function()
+        if not state.ragebotEnabled or ragebotFiring then return end
+
+        -- Hitchance gate
+        if math.random(1, 100) > state.ragebotHitchance then return end
+
+        local cam = workspace.CurrentCamera
+        local target, bone = getRagebotTarget()
+        if not target or not bone then return end
+
+        -- Velocity prediction: offset aim by estimated travel time
+        local bonePos = bone.Position
+        if state.ragebotPrediction then
+            local hrp = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local vel = hrp.AssemblyLinearVelocity or Vector3.zero
+                local dist = (cam.CFrame.Position - bonePos).Magnitude
+                local travelTime = dist / 300  -- ~300 stud/s bullet approx
+                bonePos = bonePos + vel * travelTime
+            end
+        end
+
+        -- Snap camera to target
+        local origCF = cam.CFrame
+        cam.CFrame = CFrame.new(origCF.Position, bonePos)
+
+        ragebotFiring = true
+        task.spawn(function()
+            -- First shot
+            safeFire()
+
+            -- Doubleshot: fire a second time after a short gap
+            if state.ragebotDoubleshot then
+                task.wait(0.05)
+                safeFire()
+            end
+
+            -- Hold delay then allow next shot
+            task.wait(math.max(0.016, state.ragebotDelay / 1000))
+            cam.CFrame = origCF
+            ragebotFiring = false
+        end)
+    end)
+end
+
+-- ════════════════════════════════════════════════════════════════════════════
 --  SILENT AIM ENGINE
 -- ════════════════════════════════════════════════════════════════════════════
 local function setupSilentAim()
@@ -803,7 +923,7 @@ end
 --  CLEANUP
 -- ════════════════════════════════════════════════════════════════════════════
 local function cleanup()
-    stopSpoof(); stopOrbit(); stopFly(); stopNoclip(); stopAimbot(); destroyFOVGui()
+    stopSpoof(); stopOrbit(); stopFly(); stopNoclip(); stopAimbot(); stopRagebot(); destroyFOVGui()
     for name in pairs(espObjects) do removeESP(name) end
     if espFolder and espFolder.Parent then espFolder:Destroy() end
     if guiRef then guiRef:Destroy(); guiRef = nil end
@@ -1067,7 +1187,7 @@ local function buildGUI()
     local W, FH, MH = 340, 520, 44
     local minimized=false; local guiVisible=true
 
-    local TABS  = {"Offset","Targets","Orbit","OrbTargets","Fly","Noclip","ESP","Aimbot","Silent","Settings"}
+    local TABS  = {"Offset","Targets","Orbit","OrbTargets","Fly","Noclip","ESP","Aimbot","Silent","Rage","Settings"}
     local tabCount = #TABS
 
     -- ── Window frame ──────────────────────────────────────────────────
@@ -1169,13 +1289,14 @@ local function buildGUI()
     local espPage          = makePage()
     local aimbotPage       = makePage()
     local silentPage       = makePage()
+    local ragebotPage      = makePage()
     local settingsPage     = makePage()
-    local pages        = {offsetPage, targetPage, orbitPage, orbitTargetPage, flyPage, noclipPage, espPage, aimbotPage, silentPage, settingsPage}
+    local pages        = {offsetPage, targetPage, orbitPage, orbitTargetPage, flyPage, noclipPage, espPage, aimbotPage, silentPage, ragebotPage, settingsPage}
     local tabBtns      = {}
 
     local TAB_COLORS = {
         T.accent, T.accent, T.red, T.red, T.blue, T.purple, T.yellow,
-        T.blue, T.purple, T.sub
+        T.blue, T.purple, T.rage, T.sub
     }
 
     local function switchTab(idx)
@@ -1927,6 +2048,124 @@ local function buildGUI()
     saBoneCard.MouseLeave:Connect(function() tw(saBoneCard,{BackgroundColor3=T.card}) end)
 
     -- ════════════════════════════════════════════════════════════════════
+    --  RAGEBOT PAGE
+    -- ════════════════════════════════════════════════════════════════════
+    sectionLabel(ragebotPage,"RAGEBOT",0)
+
+    -- Crimson banner
+    local rbBanner=Instance.new("Frame"); rbBanner.Size=UDim2.new(1,0,0,46); rbBanner.LayoutOrder=1
+    rbBanner.BackgroundColor3=T.rageD; rbBanner.BorderSizePixel=0; rbBanner.Parent=ragebotPage; corner(rbBanner,10)
+    local rbBannerSt=Instance.new("UIStroke"); rbBannerSt.Color=T.rage; rbBannerSt.Thickness=1.5; rbBannerSt.Parent=rbBanner
+    local rbDot=Instance.new("Frame"); rbDot.Size=UDim2.new(0,8,0,8); rbDot.Position=UDim2.new(0,12,0.5,-4)
+    rbDot.BackgroundColor3=T.rage; rbDot.BorderSizePixel=0; rbDot.Parent=rbBanner; corner(rbDot,4)
+    local rbBannerLbl=Instance.new("TextLabel"); rbBannerLbl.Size=UDim2.new(1,-60,1,0); rbBannerLbl.Position=UDim2.new(0,28,0,0)
+    rbBannerLbl.BackgroundTransparency=1; rbBannerLbl.Text="RAGEBOT  ·  Instant snap + auto-fire"
+    rbBannerLbl.TextSize=11; rbBannerLbl.Font=Enum.Font.GothamBold; rbBannerLbl.TextColor3=T.rage
+    rbBannerLbl.TextXAlignment=Enum.TextXAlignment.Left; rbBannerLbl.Parent=rbBanner
+
+    -- Warning
+    local rbWarn=Instance.new("Frame"); rbWarn.Size=UDim2.new(1,0,0,44); rbWarn.LayoutOrder=2
+    rbWarn.BackgroundColor3=Color3.fromRGB(38,10,10); rbWarn.BorderSizePixel=0; rbWarn.Parent=ragebotPage; corner(rbWarn,10)
+    local rbWarnSt=Instance.new("UIStroke"); rbWarnSt.Color=T.rageD; rbWarnSt.Thickness=1; rbWarnSt.Parent=rbWarn
+    local rbWarnLbl=Instance.new("TextLabel"); rbWarnLbl.Size=UDim2.new(1,-20,1,0); rbWarnLbl.Position=UDim2.new(0,10,0,0)
+    rbWarnLbl.BackgroundTransparency=1; rbWarnLbl.TextSize=10; rbWarnLbl.Font=Enum.Font.Gotham
+    rbWarnLbl.TextColor3=T.rage; rbWarnLbl.TextXAlignment=Enum.TextXAlignment.Left; rbWarnLbl.TextWrapped=true
+    rbWarnLbl.Text="⚠  Instant snap + auto-fire is highly detectable. Use at your own risk."
+    rbWarnLbl.Parent=rbWarn
+
+    -- Enable toggle
+    local _rbCard, _setRbPill = makeToggleCard(
+        ragebotPage,"💀  Enable Ragebot","Instant snap-to-target + automatic fire",
+        state.ragebotEnabled, 3, T.rage,
+        function(v)
+            state.ragebotEnabled = v
+            if v then startRagebot() else stopRagebot() end
+            saveAll()
+        end
+    )
+
+    -- ── Targeting ───────────────────────────────────────────────────────
+    local function rageSection(parent, text, order)
+        local f=Instance.new("Frame"); f.Size=UDim2.new(1,0,0,22); f.LayoutOrder=order
+        f.BackgroundColor3=Color3.fromRGB(28,6,6); f.BorderSizePixel=0; f.Parent=parent; corner(f,6)
+        local fSt=Instance.new("UIStroke"); fSt.Color=T.rageD; fSt.Thickness=1; fSt.Parent=f
+        local l=Instance.new("TextLabel"); l.Size=UDim2.new(1,-16,1,0); l.Position=UDim2.new(0,10,0,0)
+        l.BackgroundTransparency=1; l.Text="▸  "..text; l.TextSize=10; l.Font=Enum.Font.GothamBold
+        l.TextColor3=T.rage; l.TextXAlignment=Enum.TextXAlignment.Left; l.Parent=f
+    end
+
+    local function makeCycleCard(parent, labelText, options, getVal, setVal, accentCol, order)
+        local ac = accentCol or T.accent
+        local card=Instance.new("Frame"); card.Size=UDim2.new(1,0,0,44); card.LayoutOrder=order or 0
+        card.BackgroundColor3=T.card; card.BorderSizePixel=0; card.Parent=parent; corner(card,10)
+        local cSt=Instance.new("UIStroke"); cSt.Color=T.border; cSt.Thickness=1; cSt.Parent=card
+        local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,-120,1,0); lbl.Position=UDim2.new(0,12,0,0)
+        lbl.BackgroundTransparency=1; lbl.Text=labelText; lbl.TextSize=12; lbl.Font=Enum.Font.Gotham
+        lbl.TextColor3=T.text; lbl.TextXAlignment=Enum.TextXAlignment.Left; lbl.Parent=card
+        local vBtn=Instance.new("TextButton"); vBtn.Size=UDim2.new(0,110,0,28); vBtn.Position=UDim2.new(1,-118,0.5,-14)
+        vBtn.BackgroundColor3=T.surface; vBtn.BorderSizePixel=0; vBtn.Text=tostring(getVal())
+        vBtn.TextSize=11; vBtn.Font=Enum.Font.GothamBold; vBtn.TextColor3=ac
+        vBtn.AutoButtonColor=false; vBtn.Parent=card; corner(vBtn,6)
+        local vBtnSt=Instance.new("UIStroke"); vBtnSt.Color=Color3.fromRGB(math.floor(ac.R*255*0.5),math.floor(ac.G*255*0.5),math.floor(ac.B*255*0.5)); vBtnSt.Thickness=1; vBtnSt.Parent=vBtn
+        vBtn.MouseButton1Click:Connect(function()
+            local cur=getVal(); local idx=1
+            for i,v in ipairs(options) do if v==cur then idx=i; break end end
+            idx=(idx % #options)+1; setVal(options[idx]); vBtn.Text=options[idx]; saveAll()
+        end)
+        card.MouseEnter:Connect(function() tw(card,{BackgroundColor3=T.cardH}) end)
+        card.MouseLeave:Connect(function() tw(card,{BackgroundColor3=T.card}) end)
+        return card
+    end
+
+    rageSection(ragebotPage,"TARGETING",4)
+
+    makeCycleCard(ragebotPage,"Target Priority",
+        {"Closest","Lowest HP","Highest HP","Nearest Dist","Random"},
+        function() return state.ragebotTargetMode end,
+        function(v) state.ragebotTargetMode=v end,
+        T.rage, 5)
+
+    makeCycleCard(ragebotPage,"Hit Bone",
+        {"Head","UpperTorso","HumanoidRootPart","Torso","LowerTorso"},
+        function() return state.ragebotBone end,
+        function(v) state.ragebotBone=v end,
+        T.rage, 6)
+
+    rageSection(ragebotPage,"ACCURACY",7)
+
+    makeSlider(ragebotPage,"HITCHANCE  (%)",1,100,state.ragebotHitchance,
+        function(v) state.ragebotHitchance=v; saveAll() end, T.rage)
+
+    makeSlider(ragebotPage,"FIRE DELAY  (ms)",0,500,state.ragebotDelay,
+        function(v) state.ragebotDelay=v; saveAll() end, T.rage)
+
+    rageSection(ragebotPage,"EXPLOITS",8)
+
+    -- Doubleshot toggle
+    local _rbDsCard, _setRbDsPill = makeToggleCard(
+        ragebotPage,"⚡  Double Shot","Fire twice per trigger cycle (0.05 s gap)",
+        state.ragebotDoubleshot, 9, T.rage,
+        function(v) state.ragebotDoubleshot=v; saveAll() end
+    )
+
+    -- Velocity prediction toggle
+    local _rbPredCard, _setRbPredPill = makeToggleCard(
+        ragebotPage,"🔮  Velocity Prediction","Lead target using HRP AssemblyLinearVelocity",
+        state.ragebotPrediction, 10, T.rage,
+        function(v) state.ragebotPrediction=v; saveAll() end
+    )
+
+    -- Prediction info card
+    local rbPredInfo=Instance.new("Frame"); rbPredInfo.Size=UDim2.new(1,0,0,56); rbPredInfo.LayoutOrder=11
+    rbPredInfo.BackgroundColor3=Color3.fromRGB(28,8,8); rbPredInfo.BorderSizePixel=0; rbPredInfo.Parent=ragebotPage; corner(rbPredInfo,10)
+    local rbPredSt=Instance.new("UIStroke"); rbPredSt.Color=T.rageD; rbPredSt.Thickness=1; rbPredSt.Parent=rbPredInfo
+    local rbPredLbl=Instance.new("TextLabel"); rbPredLbl.Size=UDim2.new(1,-20,1,0); rbPredLbl.Position=UDim2.new(0,10,0,0)
+    rbPredLbl.BackgroundTransparency=1; rbPredLbl.TextSize=10; rbPredLbl.Font=Enum.Font.Gotham
+    rbPredLbl.TextColor3=T.sub; rbPredLbl.TextXAlignment=Enum.TextXAlignment.Left; rbPredLbl.TextWrapped=true
+    rbPredLbl.Text="Adds the target's velocity × estimated bullet travel time to the aim position. Assumes ~300 stud/s bullet speed."
+    rbPredLbl.Parent=rbPredInfo
+
+    -- ════════════════════════════════════════════════════════════════════
     --  SETTINGS PAGE
     -- ════════════════════════════════════════════════════════════════════
     sectionLabel(settingsPage,"KEYBINDS",0)
@@ -2140,6 +2379,7 @@ local function init()
     if state.noclipEnabled  then startNoclip()  end
     if state.aimbotEnabled  then startAimbot()  end
     if state.silentEnabled  then setupSilentAim() end
+    if state.ragebotEnabled then startRagebot()  end
 end
 
 init()
