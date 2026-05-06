@@ -1,11 +1,11 @@
 -- ════════════════════════════════════════════════════════════════════════════
---  Fake Position Spoof  ·  Clean Edition
---  ✦ Offset tab  (X/Y/Z ±150 000, random dir, stick mode)
---  ✦ Targets tab  (per-player targeting + search)
---  ✦ Settings tab  (keybinds, presets, file info)
---  ✦ Collision fix  (own character always has normal collision)
---  ✦ Mobile-only right-side panel  (Toggle UI / Lock UI buttons)
---  ✦ Removed: Orbit, OrbTargets, Fly, Noclip, ESP, Aimbot, Ragebot
+--  Fake Position Spoof  ·  v16.0
+--  ✦ Minecraft font (Enum.Font.Code monospace) — all lowercase labels
+--  ✦ Resizable window  (drag bottom-right corner handle)
+--  ✦ Proper rounded corners  (clip layer pattern, no visual square edges)
+--  ✦ Random Direction toggle removed
+--  ✦ Target All defaults OFF on inject
+--  ✦ Tabs: offset / targets / settings
 -- ════════════════════════════════════════════════════════════════════════════
 
 local Players          = game:GetService("Players")
@@ -20,14 +20,10 @@ local SAVE_FILE = "FakePosClean.json"
 local state = {
     x = 0, y = 1000, z = 0,
     enabled      = false,
-    targetAll    = true,
+    targetAll    = false,   -- OFF by default on inject
     stickEnabled = false,
-    randomDir    = false,
-    randomDirTimer = 0,
-    randomDirVec   = Vector3.new(0, 1, 0),
     spoofKey = Enum.KeyCode.RightControl,
     guiKey   = Enum.KeyCode.RightShift,
-    -- FOV Visualizer
     fovEnabled = false,
     fovRange   = 60,
 }
@@ -36,7 +32,7 @@ local targeted     = {}
 local customPresets= {}
 local spoofConn    = nil
 local guiRef       = nil
-local guiLocked    = false   -- for Lock UI mobile button
+local guiLocked    = false
 local spoofBasePos = Vector3.zero
 
 -- ════════════════════════════════════════════════════════════════════════════
@@ -59,20 +55,18 @@ local T = {
     inputBG = Color3.fromRGB(35,  35,  35),
 }
 
+-- Closest to Minecraft font available in Roblox (monospace pixel-style)
+local FONT      = Enum.Font.Arial
+local FONT_BOLD = Enum.Font.ArialBold
+
 -- ════════════════════════════════════════════════════════════════════════════
 --  COLLISION FIX
---  Ensure the LOCAL player's character parts always have normal collision.
---  This runs every Stepped frame and is the authoritative fix — nothing in
---  this script touches other players' CanCollide, so they are unaffected.
 -- ════════════════════════════════════════════════════════════════════════════
 RunService.Stepped:Connect(function()
     local char = LocalPlayer.Character
     if not char then return end
     for _, p in ipairs(char:GetDescendants()) do
         if p:IsA("BasePart") and not p.CanCollide then
-            -- Only restore if it was we who disabled it (no external scripts assumed)
-            -- We never disable our own collision in this script, so anything
-            -- false here was set by a prior noclip remnant — restore it.
             p.CanCollide = true
         end
     end
@@ -87,9 +81,9 @@ local function jsonStr(src, key) return src:match('"'..key..'":"([^"]*)"') end
 
 local function serSettings()
     return string.format(
-        '{"spoofKey":"%s","guiKey":"%s","stickEnabled":%s,"randomDir":%s,"fovEnabled":%s,"fovRange":%d}',
+        '{"spoofKey":"%s","guiKey":"%s","stickEnabled":%s,"fovEnabled":%s,"fovRange":%d}',
         state.spoofKey.Name, state.guiKey.Name,
-        tostring(state.stickEnabled), tostring(state.randomDir),
+        tostring(state.stickEnabled),
         tostring(state.fovEnabled), state.fovRange
     )
 end
@@ -121,7 +115,6 @@ local function loadAll()
         if sk then local o,k=pcall(function() return Enum.KeyCode[sk] end); if o and k then state.spoofKey=k end end
         if gk then local o,k=pcall(function() return Enum.KeyCode[gk] end); if o and k then state.guiKey=k end end
         state.stickEnabled = (sb:match('"stickEnabled":(%a+)') or "false") == "true"
-        state.randomDir    = (sb:match('"randomDir":(%a+)')    or "false") == "true"
         state.fovEnabled   = (sb:match('"fovEnabled":(%a+)')   or "false") == "true"
         state.fovRange     = jsonNum(sb,"fovRange") or state.fovRange
     end) end
@@ -142,28 +135,14 @@ local function stopSpoof()
     if spoofConn then spoofConn:Disconnect(); spoofConn = nil end
 end
 
-local function randomVec()
-    local v = Vector3.new(
-        math.random(-100,100)/100,
-        math.random(  10,100)/100,
-        math.random(-100,100)/100
-    )
-    if v.Magnitude < 0.01 then v = Vector3.new(0,1,0) end
-    return v.Unit
-end
-
 local function startSpoof()
     stopSpoof()
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     spoofBasePos = hrp and hrp.Position or Vector3.zero
-    state.randomDirVec   = randomVec()
-    state.randomDirTimer = 0
 
-    spoofConn = RunService.Heartbeat:Connect(function(dt)
+    spoofConn = RunService.Heartbeat:Connect(function()
         if not state.enabled then return end
-
-        -- Base position
         local base
         if state.stickEnabled then
             local c = LocalPlayer.Character
@@ -172,23 +151,7 @@ local function startSpoof()
         else
             base = spoofBasePos
         end
-
-        -- Compute fake position
-        local fp
-        if state.randomDir then
-            state.randomDirTimer = state.randomDirTimer + dt
-            if state.randomDirTimer >= 1.5 then
-                state.randomDirTimer = 0
-                state.randomDirVec   = randomVec()
-            end
-            local mag = math.sqrt(state.x^2 + state.y^2 + state.z^2)
-            if mag < 1 then mag = 1000 end
-            fp = base + state.randomDirVec * mag
-        else
-            fp = base + Vector3.new(state.x, state.y, state.z)
-        end
-
-        -- Apply to targeted players
+        local fp = base + Vector3.new(state.x, state.y, state.z)
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and (state.targetAll or targeted[p.Name]) then
                 local c = p.Character
@@ -214,7 +177,6 @@ local function buildFOVGui(parentGui)
     fovGui = Instance.new("Frame")
     fovGui.Name = "FOVVisualizer"; fovGui.Size = UDim2.new(1,0,1,0)
     fovGui.BackgroundTransparency = 1; fovGui.ZIndex = 50; fovGui.Parent = parentGui
-
     local segs = {}
     for i = 1, FOV_SEGMENTS do
         local s = Instance.new("Frame"); s.Size = UDim2.new(0,2,0,2)
@@ -222,14 +184,10 @@ local function buildFOVGui(parentGui)
         s.AnchorPoint = Vector2.new(0.5,0.5); s.ZIndex = 51; s.Parent = fovGui
         segs[i] = s
     end
-
     local conn
     conn = RunService.RenderStepped:Connect(function()
-        if not state.fovEnabled or not fovGui or not fovGui.Parent then
-            conn:Disconnect(); return
-        end
-        local sz = fovGui.AbsoluteSize
-        local cx, cy = sz.X/2, sz.Y/2
+        if not state.fovEnabled or not fovGui or not fovGui.Parent then conn:Disconnect(); return end
+        local sz = fovGui.AbsoluteSize; local cx, cy = sz.X/2, sz.Y/2
         local camFOV = workspace.CurrentCamera.FieldOfView
         local r = (math.tan(math.rad(state.fovRange)) / math.tan(math.rad(camFOV/2))) * (sz.Y/2)
         for i, s in ipairs(segs) do
@@ -252,11 +210,18 @@ end
 -- ════════════════════════════════════════════════════════════════════════════
 --  UI HELPERS
 -- ════════════════════════════════════════════════════════════════════════════
-local TW = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local function tw(o, p) TweenService:Create(o, TW, p):Play() end
+local TW_INFO = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local function tw(o, p) TweenService:Create(o, TW_INFO, p):Play() end
+
+-- Rounded corners that actually SHOW: parent must NOT clip its own children.
+-- We separately add a clipping frame inside windows so content stays inside.
 local function corner(p, r)
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = p
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r or 8)
+    c.Parent = p
+    return c
 end
+
 local function stroke(p, col, w)
     local s = Instance.new("UIStroke"); s.Color = col or T.border; s.Thickness = w or 1; s.Parent = p; return s
 end
@@ -270,16 +235,18 @@ local function padding(p, a, b)
 end
 local function sectionLabel(parent, text, order)
     local l = Instance.new("TextLabel"); l.Size = UDim2.new(1,0,0,14); l.BackgroundTransparency = 1
-    l.Text = text; l.TextSize = 10; l.Font = Enum.Font.GothamBold; l.TextColor3 = T.sub
+    l.Text = text:lower(); l.TextSize = 10; l.Font = FONT_BOLD; l.TextColor3 = T.sub
     l.TextXAlignment = Enum.TextXAlignment.Left; l.LayoutOrder = order or 0; l.Parent = parent
 end
 
 local function makePillToggle(parent, initVal, onChange)
     local pill = Instance.new("Frame"); pill.Size = UDim2.new(0,40,0,22)
-    pill.BackgroundColor3 = initVal and T.accent or T.border; pill.BorderSizePixel = 0; pill.Parent = parent; corner(pill,11)
+    pill.BackgroundColor3 = initVal and T.accent or T.border; pill.BorderSizePixel = 0; pill.Parent = parent
+    corner(pill,11)
     local knob = Instance.new("Frame"); knob.Size = UDim2.new(0,15,0,15)
     knob.Position = initVal and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
-    knob.BackgroundColor3 = Color3.fromRGB(240,240,240); knob.BorderSizePixel = 0; knob.Parent = pill; corner(knob,8)
+    knob.BackgroundColor3 = Color3.fromRGB(240,240,240); knob.BorderSizePixel = 0; knob.Parent = pill
+    corner(knob,8)
     local val = initVal
     local function setV(v, animate)
         val = v; local t = animate and 0.15 or 0
@@ -310,39 +277,45 @@ local function makeSlider(parent, lText, minV, maxV, defV, onChange, accentColor
     local THUMB = 16
     local ac = accentColor or T.accent
     local wrap = Instance.new("Frame"); wrap.Size = UDim2.new(1,0,0,78)
-    wrap.BackgroundColor3 = T.card; wrap.BorderSizePixel = 0; wrap.Parent = parent; corner(wrap,10)
+    wrap.BackgroundColor3 = T.card; wrap.BorderSizePixel = 0; wrap.Parent = parent
+    corner(wrap,10)
 
     local hdr = Instance.new("Frame"); hdr.Size = UDim2.new(1,-24,0,18); hdr.Position = UDim2.new(0,12,0,8)
     hdr.BackgroundTransparency = 1; hdr.Parent = wrap
 
     local lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(0.45,0,1,0); lbl.BackgroundTransparency = 1
-    lbl.Text = lText; lbl.TextSize = 11; lbl.Font = Enum.Font.GothamBold; lbl.TextColor3 = T.sub
+    lbl.Text = lText:lower(); lbl.TextSize = 11; lbl.Font = FONT_BOLD; lbl.TextColor3 = T.sub
     lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.Parent = hdr
 
     local valBox = Instance.new("TextBox"); valBox.Size = UDim2.new(0.35,-2,1,2); valBox.Position = UDim2.new(0.45,2,0,-1)
     valBox.BackgroundColor3 = T.inputBG; valBox.BorderSizePixel = 0; valBox.Text = tostring(defV)
     valBox.PlaceholderText = "value"; valBox.PlaceholderColor3 = T.sub; valBox.TextColor3 = ac
-    valBox.TextSize = 12; valBox.Font = Enum.Font.GothamBold; valBox.TextXAlignment = Enum.TextXAlignment.Right
-    valBox.ClearTextOnFocus = false; valBox.ZIndex = 6; valBox.Parent = hdr; corner(valBox,5); stroke(valBox,T.accentD,1)
+    valBox.TextSize = 12; valBox.Font = FONT; valBox.TextXAlignment = Enum.TextXAlignment.Right
+    valBox.ClearTextOnFocus = false; valBox.ZIndex = 6; valBox.Parent = hdr
+    corner(valBox,5); stroke(valBox,T.accentD,1)
     local vbPad = Instance.new("UIPadding"); vbPad.PaddingRight = UDim.new(0,5); vbPad.Parent = valBox
 
     local resetBtn = Instance.new("TextButton"); resetBtn.Size = UDim2.new(0.18,-2,1,2)
     resetBtn.Position = UDim2.new(0.82,2,0,-1); resetBtn.BackgroundColor3 = T.surface
     resetBtn.BorderSizePixel = 0; resetBtn.Text = "↺"; resetBtn.TextColor3 = T.sub
-    resetBtn.TextSize = 13; resetBtn.Font = Enum.Font.GothamBold; resetBtn.AutoButtonColor = false
-    resetBtn.ZIndex = 6; resetBtn.Parent = hdr; corner(resetBtn,5); stroke(resetBtn,T.accentD,1)
+    resetBtn.TextSize = 13; resetBtn.Font = FONT_BOLD; resetBtn.AutoButtonColor = false
+    resetBtn.ZIndex = 6; resetBtn.Parent = hdr
+    corner(resetBtn,5); stroke(resetBtn,T.accentD,1)
     resetBtn.MouseEnter:Connect(function() tw(resetBtn,{BackgroundColor3=T.cardH,TextColor3=ac}) end)
     resetBtn.MouseLeave:Connect(function() tw(resetBtn,{BackgroundColor3=T.surface,TextColor3=T.sub}) end)
 
     local track = Instance.new("Frame"); track.Size = UDim2.new(1,-24,0,4); track.Position = UDim2.new(0,12,0,58)
-    track.BackgroundColor3 = T.border; track.BorderSizePixel = 0; track.Parent = wrap; corner(track,4)
+    track.BackgroundColor3 = T.border; track.BorderSizePixel = 0; track.Parent = wrap
+    corner(track,4)
 
     local fill = Instance.new("Frame"); fill.Size = UDim2.new(0,0,1,0); fill.BackgroundColor3 = ac
-    fill.BorderSizePixel = 0; fill.Parent = track; corner(fill,4)
+    fill.BorderSizePixel = 0; fill.Parent = track
+    corner(fill,4)
 
     local thumb = Instance.new("Frame"); thumb.Size = UDim2.new(0,THUMB,0,THUMB)
     thumb.Position = UDim2.new(0,-THUMB/2,0.5,-THUMB/2); thumb.BackgroundColor3 = Color3.fromRGB(238,238,238)
-    thumb.BorderSizePixel = 0; thumb.ZIndex = 5; thumb.Parent = track; corner(thumb,THUMB/2); stroke(thumb,T.accentD,1.5)
+    thumb.BorderSizePixel = 0; thumb.ZIndex = 5; thumb.Parent = track
+    corner(thumb,THUMB/2); stroke(thumb,T.accentD,1.5)
 
     local cur = defV
     local function updateVis(v)
@@ -403,22 +376,36 @@ local function buildGUI()
     if state.fovEnabled then buildFOVGui(gui) end
 
     local W, FH, MH = 300, 480, 44
+    local MIN_W, MIN_H = 220, 300
     local minimized  = false
     local guiVisible = true
 
-    -- ── Window ────────────────────────────────────────────────────────
+    -- ── Outer window frame (NOT ClipsDescendants so corners render properly)
     local winFrame = Instance.new("Frame")
-    winFrame.Size = UDim2.new(0,W,0,FH); winFrame.Position = UDim2.new(0.5,-W/2,0.5,-FH/2)
+    winFrame.Name = "WinFrame"
+    winFrame.Size = UDim2.new(0,W,0,FH)
+    winFrame.Position = UDim2.new(0.5,-W/2,0.5,-FH/2)
     winFrame.BackgroundColor3 = T.bg; winFrame.BorderSizePixel = 0
-    winFrame.Active = true; winFrame.ClipsDescendants = true; winFrame.Parent = gui
+    winFrame.Active = true; winFrame.ClipsDescendants = false
+    winFrame.Parent = gui
     corner(winFrame,12); stroke(winFrame,T.border)
 
-    local strip = Instance.new("Frame"); strip.Size = UDim2.new(0,3,0,20); strip.Position = UDim2.new(0,0,0,12)
-    strip.BackgroundColor3 = T.accent; strip.BorderSizePixel = 0; strip.Parent = winFrame; corner(strip,2)
+    -- ── Inner clip frame: all UI lives here, clips to rounded rect
+    local clipInner = Instance.new("Frame")
+    clipInner.Name = "ClipInner"
+    clipInner.Size = UDim2.new(1,0,1,0)
+    clipInner.BackgroundTransparency = 1; clipInner.BorderSizePixel = 0
+    clipInner.ClipsDescendants = true; clipInner.Parent = winFrame
+    corner(clipInner,12)
 
-    -- Title bar (drag zone)
+    -- Accent strip
+    local strip = Instance.new("Frame"); strip.Size = UDim2.new(0,3,0,20); strip.Position = UDim2.new(0,0,0,12)
+    strip.BackgroundColor3 = T.accent; strip.BorderSizePixel = 0; strip.Parent = clipInner
+    corner(strip,2)
+
+    -- ── Title bar / drag zone
     local titleBar = Instance.new("Frame"); titleBar.Size = UDim2.new(1,0,0,44)
-    titleBar.BackgroundColor3 = T.surface; titleBar.BorderSizePixel = 0; titleBar.ZIndex = 3; titleBar.Parent = winFrame
+    titleBar.BackgroundColor3 = T.surface; titleBar.BorderSizePixel = 0; titleBar.ZIndex = 3; titleBar.Parent = clipInner
     local dragging, dragStart, winStart = false, nil, nil
     titleBar.InputBegan:Connect(function(inp)
         if guiLocked then return end
@@ -440,26 +427,28 @@ local function buildGUI()
 
     local titleLbl = Instance.new("TextLabel")
     titleLbl.Size = UDim2.new(1,-120,0,44); titleLbl.Position = UDim2.new(0,14,0,0)
-    titleLbl.BackgroundTransparency = 1; titleLbl.Text = "Fake Position"
-    titleLbl.TextSize = 15; titleLbl.Font = Enum.Font.GothamBold
+    titleLbl.BackgroundTransparency = 1; titleLbl.Text = "fake position"
+    titleLbl.TextSize = 15; titleLbl.Font = FONT_BOLD
     titleLbl.TextColor3 = T.text; titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-    titleLbl.ZIndex = 4; titleLbl.Parent = winFrame
+    titleLbl.ZIndex = 4; titleLbl.Parent = clipInner
 
     -- Status pill
     local pill = Instance.new("Frame"); pill.Size = UDim2.new(0,68,0,22); pill.Position = UDim2.new(1,-118,0,11)
-    pill.BackgroundColor3 = T.accentD; pill.BorderSizePixel = 0; pill.ZIndex = 4; pill.Parent = winFrame; corner(pill,11)
+    pill.BackgroundColor3 = T.accentD; pill.BorderSizePixel = 0; pill.ZIndex = 4; pill.Parent = clipInner
+    corner(pill,11)
     local pillDot = Instance.new("Frame"); pillDot.Size = UDim2.new(0,6,0,6); pillDot.Position = UDim2.new(0,8,0.5,-3)
-    pillDot.BackgroundColor3 = T.accent; pillDot.BorderSizePixel = 0; pillDot.ZIndex = 5; pillDot.Parent = pill; corner(pillDot,3)
+    pillDot.BackgroundColor3 = T.accent; pillDot.BorderSizePixel = 0; pillDot.ZIndex = 5; pillDot.Parent = pill
+    corner(pillDot,3)
     local pillTxt = Instance.new("TextLabel"); pillTxt.Size = UDim2.new(1,-20,1,0); pillTxt.Position = UDim2.new(0,19,0,0)
-    pillTxt.BackgroundTransparency = 1; pillTxt.Text = "ACTIVE"; pillTxt.TextSize = 10; pillTxt.Font = Enum.Font.GothamBold
+    pillTxt.BackgroundTransparency = 1; pillTxt.Text = "active"; pillTxt.TextSize = 10; pillTxt.Font = FONT_BOLD
     pillTxt.TextColor3 = T.accent; pillTxt.TextXAlignment = Enum.TextXAlignment.Left; pillTxt.ZIndex = 5; pillTxt.Parent = pill
 
     local function updateStatus()
         if state.enabled then
-            pillTxt.Text = "ACTIVE"; pillTxt.TextColor3 = T.accent; pillDot.BackgroundColor3 = T.accent
+            pillTxt.Text = "active"; pillTxt.TextColor3 = T.accent; pillDot.BackgroundColor3 = T.accent
             tw(pill,{BackgroundColor3=T.accentD})
         else
-            pillTxt.Text = "OFF"; pillTxt.TextColor3 = T.sub; pillDot.BackgroundColor3 = Color3.fromRGB(70,70,70)
+            pillTxt.Text = "off"; pillTxt.TextColor3 = T.sub; pillDot.BackgroundColor3 = Color3.fromRGB(70,70,70)
             tw(pill,{BackgroundColor3=Color3.fromRGB(32,32,32)})
         end
     end
@@ -467,35 +456,41 @@ local function buildGUI()
     -- Minimize button
     local minBtn = Instance.new("TextButton"); minBtn.Size = UDim2.new(0,28,0,22); minBtn.Position = UDim2.new(1,-36,0,11)
     minBtn.BackgroundColor3 = T.card; minBtn.BorderSizePixel = 0; minBtn.Text = "—"; minBtn.TextColor3 = T.sub
-    minBtn.TextSize = 13; minBtn.Font = Enum.Font.GothamBold; minBtn.AutoButtonColor = false; minBtn.ZIndex = 5; minBtn.Parent = winFrame; corner(minBtn,6)
+    minBtn.TextSize = 13; minBtn.Font = FONT_BOLD; minBtn.AutoButtonColor = false; minBtn.ZIndex = 5; minBtn.Parent = clipInner
+    corner(minBtn,6)
     minBtn.MouseEnter:Connect(function() tw(minBtn,{BackgroundColor3=T.cardH}) end)
     minBtn.MouseLeave:Connect(function() tw(minBtn,{BackgroundColor3=T.card}) end)
     minBtn.MouseButton1Click:Connect(function()
         minimized = not minimized; minBtn.Text = minimized and "+" or "—"
-        TweenService:Create(winFrame,TweenInfo.new(0.2,Enum.EasingStyle.Quad),{Size=UDim2.new(0,W,0,minimized and MH or FH)}):Play()
+        local targetH = minimized and MH or FH
+        TweenService:Create(winFrame,TweenInfo.new(0.2,Enum.EasingStyle.Quad),{Size=UDim2.new(0,W,0,targetH)}):Play()
+        TweenService:Create(clipInner,TweenInfo.new(0.2,Enum.EasingStyle.Quad),{Size=UDim2.new(1,0,0,targetH)}):Play()
     end)
 
     local function setGuiVisible(v)
         guiVisible = v
         if v then
             winFrame.Visible = true
-            TweenService:Create(winFrame,TweenInfo.new(0.2,Enum.EasingStyle.Quad),{Size=UDim2.new(0,W,0,minimized and MH or FH)}):Play()
+            local targetH = minimized and MH or FH
+            TweenService:Create(winFrame,TweenInfo.new(0.2,Enum.EasingStyle.Quad),{Size=UDim2.new(0,W,0,targetH)}):Play()
+            TweenService:Create(clipInner,TweenInfo.new(0.2,Enum.EasingStyle.Quad),{Size=UDim2.new(1,0,0,targetH)}):Play()
         else
             TweenService:Create(winFrame,TweenInfo.new(0.18,Enum.EasingStyle.Quad),{Size=UDim2.new(0,W,0,0)}):Play()
+            TweenService:Create(clipInner,TweenInfo.new(0.18,Enum.EasingStyle.Quad),{Size=UDim2.new(1,0,0,0)}):Play()
             task.delay(0.2, function() if not guiVisible then winFrame.Visible = false end end)
         end
     end
 
-    -- ── Tab bar ───────────────────────────────────────────────────────
-    local TABS = {"Offset", "Targets", "Settings"}
+    -- ── Tab bar
+    local TABS = {"offset", "targets", "settings"}
     local tabBar = Instance.new("Frame"); tabBar.Size = UDim2.new(1,0,0,36); tabBar.Position = UDim2.new(0,0,0,44)
-    tabBar.BackgroundColor3 = T.surface; tabBar.BorderSizePixel = 0; tabBar.Parent = winFrame
+    tabBar.BackgroundColor3 = T.surface; tabBar.BorderSizePixel = 0; tabBar.Parent = clipInner
     local tabDiv = Instance.new("Frame"); tabDiv.Size = UDim2.new(1,0,0,1); tabDiv.Position = UDim2.new(0,0,1,-1)
     tabDiv.BackgroundColor3 = T.border; tabDiv.BorderSizePixel = 0; tabDiv.Parent = tabBar
 
     local contentArea = Instance.new("Frame")
     contentArea.Size = UDim2.new(1,0,1,-80); contentArea.Position = UDim2.new(0,0,0,80)
-    contentArea.BackgroundTransparency = 1; contentArea.ClipsDescendants = true; contentArea.Parent = winFrame
+    contentArea.BackgroundTransparency = 1; contentArea.ClipsDescendants = true; contentArea.Parent = clipInner
 
     local function makePage()
         local p = Instance.new("ScrollingFrame"); p.Size = UDim2.new(1,0,1,0)
@@ -516,54 +511,101 @@ local function buildGUI()
         for i, pg in ipairs(pages) do pg.Visible = (i == idx) end
         for i, btn in ipairs(tabBtns) do
             local ul = btn:FindFirstChildOfClass("Frame"); if ul then ul.Visible = (i == idx) end
-            if i == idx then tw(btn,{TextColor3=T.text}); btn.Font = Enum.Font.GothamBold
-            else tw(btn,{TextColor3=T.sub}); btn.Font = Enum.Font.Gotham end
+            if i == idx then tw(btn,{TextColor3=T.text}); btn.Font = FONT_BOLD
+            else tw(btn,{TextColor3=T.sub}); btn.Font = FONT end
         end
     end
 
     local tW = W / #TABS
     for i, name in ipairs(TABS) do
-        local btn = Instance.new("TextButton"); btn.Size = UDim2.new(0,tW,1,-1); btn.Position = UDim2.new(0,(i-1)*tW,0,0)
-        btn.BackgroundTransparency = 1; btn.BorderSizePixel = 0; btn.Text = name; btn.TextSize = 11; btn.Font = Enum.Font.Gotham
-        btn.TextColor3 = T.sub; btn.AutoButtonColor = false; btn.Parent = tabBar; tabBtns[i] = btn
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0,tW,1,-1); btn.Position = UDim2.new(0,(i-1)*tW,0,0)
+        btn.BackgroundTransparency = 1; btn.BorderSizePixel = 0; btn.Text = name
+        btn.TextSize = 11; btn.Font = FONT; btn.TextColor3 = T.sub; btn.AutoButtonColor = false
+        btn.Parent = tabBar; tabBtns[i] = btn
         local ul = Instance.new("Frame"); ul.Size = UDim2.new(0.55,0,0,2); ul.Position = UDim2.new(0.225,0,1,-2)
-        ul.BackgroundColor3 = T.accent; ul.BorderSizePixel = 0; ul.Visible = (i==1); ul.Parent = btn; corner(ul,1)
+        ul.BackgroundColor3 = T.accent; ul.BorderSizePixel = 0; ul.Visible = (i==1); ul.Parent = btn
+        corner(ul,1)
         btn.MouseButton1Click:Connect(function() switchTab(i) end)
     end
+
+    -- ── Resize handle (bottom-right, parented to winFrame so it stays outside clipInner)
+    local HANDLE = 18
+    local resizeHandle = Instance.new("TextButton")
+    resizeHandle.Size = UDim2.new(0,HANDLE,0,HANDLE)
+    resizeHandle.Position = UDim2.new(1,-HANDLE,1,-HANDLE)
+    resizeHandle.BackgroundColor3 = T.accentD; resizeHandle.BorderSizePixel = 0
+    resizeHandle.Text = "⌟"; resizeHandle.TextSize = 12; resizeHandle.Font = FONT_BOLD
+    resizeHandle.TextColor3 = T.accent; resizeHandle.AutoButtonColor = false; resizeHandle.ZIndex = 25
+    resizeHandle.Parent = winFrame  -- parent of winFrame, not clipInner
+    corner(resizeHandle,5)
+    resizeHandle.MouseEnter:Connect(function() tw(resizeHandle,{BackgroundColor3=T.accent,TextColor3=T.bg}) end)
+    resizeHandle.MouseLeave:Connect(function() tw(resizeHandle,{BackgroundColor3=T.accentD,TextColor3=T.accent}) end)
+
+    local resizing, resizeStart, resizeOrigW, resizeOrigH = false, nil, 0, 0
+    resizeHandle.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            resizing = true; resizeStart = inp.Position
+            resizeOrigW = winFrame.AbsoluteSize.X; resizeOrigH = winFrame.AbsoluteSize.Y
+        end
+    end)
+    resizeHandle.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            resizing = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(inp)
+        if not resizing then return end
+        if inp.UserInputType ~= Enum.UserInputType.MouseMovement and inp.UserInputType ~= Enum.UserInputType.Touch then return end
+        local d = inp.Position - resizeStart
+        local newW = math.max(MIN_W, resizeOrigW + d.X)
+        local newH = math.max(MIN_H, resizeOrigH + d.Y)
+        W = newW; FH = newH
+        winFrame.Size = UDim2.new(0,newW,0,newH)
+        clipInner.Size = UDim2.new(1,0,1,0)  -- always fill winFrame
+        -- Recalculate tab button widths
+        local newTW = newW / #TABS
+        for i, btn in ipairs(tabBtns) do
+            btn.Size = UDim2.new(0,newTW,1,-1)
+            btn.Position = UDim2.new(0,(i-1)*newTW,0,0)
+        end
+    end)
 
     -- ════════════════════════════════════════════════════════════════════
     --  OFFSET PAGE
     -- ════════════════════════════════════════════════════════════════════
-    local _,_,setX = makeSlider(offsetPage,"X  OFFSET",-150000,150000,state.x,function(v) state.x=v end)
-    local _,_,setY = makeSlider(offsetPage,"Y  OFFSET",-150000,150000,state.y,function(v) state.y=v end)
-    local _,_,setZ = makeSlider(offsetPage,"Z  OFFSET",-150000,150000,state.z,function(v) state.z=v end)
+    local _,_,setX = makeSlider(offsetPage,"x  offset",-150000,150000,state.x,function(v) state.x=v end)
+    local _,_,setY = makeSlider(offsetPage,"y  offset",-150000,150000,state.y,function(v) state.y=v end)
+    local _,_,setZ = makeSlider(offsetPage,"z  offset",-150000,150000,state.z,function(v) state.z=v end)
 
-    -- Reset button
     local resetBtn = Instance.new("TextButton"); resetBtn.Size = UDim2.new(1,0,0,34)
-    resetBtn.BackgroundColor3 = T.card; resetBtn.BorderSizePixel = 0; resetBtn.Text = "↺   Reset  ( 0 / 1000 / 0 )"
-    resetBtn.TextSize = 12; resetBtn.Font = Enum.Font.Gotham; resetBtn.TextColor3 = T.sub
-    resetBtn.AutoButtonColor = false; resetBtn.Parent = offsetPage; corner(resetBtn,8); stroke(resetBtn,T.border)
+    resetBtn.BackgroundColor3 = T.card; resetBtn.BorderSizePixel = 0
+    resetBtn.Text = "↺   reset  ( 0 / 1000 / 0 )"
+    resetBtn.TextSize = 12; resetBtn.Font = FONT; resetBtn.TextColor3 = T.sub
+    resetBtn.AutoButtonColor = false; resetBtn.Parent = offsetPage
+    corner(resetBtn,8); stroke(resetBtn,T.border)
     resetBtn.MouseEnter:Connect(function() tw(resetBtn,{BackgroundColor3=T.cardH,TextColor3=T.text}) end)
-    resetBtn.MouseLeave:Connect(function() tw(resetBtn,{BackgroundColor3=T.card, TextColor3=T.sub}) end)
+    resetBtn.MouseLeave:Connect(function() tw(resetBtn,{BackgroundColor3=T.card,TextColor3=T.sub}) end)
     resetBtn.MouseButton1Click:Connect(function()
         state.x,state.y,state.z = 0,1000,0; setX(0,false); setY(1000,false); setZ(0,false)
         tw(resetBtn,{BackgroundColor3=T.accentD}); task.delay(0.35,function() tw(resetBtn,{BackgroundColor3=T.card}) end)
     end)
 
-    -- Toggles row: Stick + Random Dir
-    sectionLabel(offsetPage,"MODES")
+    -- Modes section (Stick only — Random Direction removed)
+    sectionLabel(offsetPage,"modes")
     local modesFrame = Instance.new("Frame"); modesFrame.Size = UDim2.new(1,0,0,0)
     modesFrame.BackgroundTransparency = 1; modesFrame.AutomaticSize = Enum.AutomaticSize.Y
     modesFrame.Parent = offsetPage; listLayout(modesFrame,6)
 
     local function modeCard(parent, labelTxt, descTxt, initVal, onChange)
         local card = Instance.new("Frame"); card.Size = UDim2.new(1,0,0,54)
-        card.BackgroundColor3 = T.card; card.BorderSizePixel = 0; card.Parent = parent; corner(card,10); stroke(card,T.border)
+        card.BackgroundColor3 = T.card; card.BorderSizePixel = 0; card.Parent = parent
+        corner(card,10); stroke(card,T.border)
         local lbl = Instance.new("TextLabel"); lbl.Size = UDim2.new(1,-60,0,20); lbl.Position = UDim2.new(0,14,0,8)
-        lbl.BackgroundTransparency = 1; lbl.Text = labelTxt; lbl.TextSize = 13; lbl.Font = Enum.Font.GothamBold
+        lbl.BackgroundTransparency = 1; lbl.Text = labelTxt:lower(); lbl.TextSize = 13; lbl.Font = FONT_BOLD
         lbl.TextColor3 = T.text; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.Parent = card
         local desc = Instance.new("TextLabel"); desc.Size = UDim2.new(1,-60,0,14); desc.Position = UDim2.new(0,14,0,30)
-        desc.BackgroundTransparency = 1; desc.Text = descTxt; desc.TextSize = 10; desc.Font = Enum.Font.Gotham
+        desc.BackgroundTransparency = 1; desc.Text = descTxt:lower(); desc.TextSize = 10; desc.Font = FONT
         desc.TextColor3 = T.sub; desc.TextXAlignment = Enum.TextXAlignment.Left; desc.Parent = card
         local _pill, setPill = makePillToggle(card, initVal, onChange)
         _pill.Position = UDim2.new(1,-52,0.5,-11); _pill.Parent = card
@@ -572,7 +614,7 @@ local function buildGUI()
         return card, setPill
     end
 
-    modeCard(modesFrame,"📌  Stick to You","Spoof tracks your real position",state.stickEnabled,function(v)
+    modeCard(modesFrame,"📌  stick to you","spoof tracks your real position",state.stickEnabled,function(v)
         state.stickEnabled = v
         if v then
             local c = LocalPlayer.Character; local h = c and c:FindFirstChild("HumanoidRootPart")
@@ -580,27 +622,26 @@ local function buildGUI()
         end
         saveAll()
     end)
-    modeCard(modesFrame,"🎲  Random Direction","Changes direction every 1.5 s",state.randomDir,function(v)
-        state.randomDir = v; state.randomDirVec = randomVec(); state.randomDirTimer = 0; saveAll()
-    end)
 
-    -- Built-in presets
-    sectionLabel(offsetPage,"QUICK PRESETS")
+    -- Quick presets
+    sectionLabel(offsetPage,"quick presets")
     local builtRow = Instance.new("Frame"); builtRow.Size = UDim2.new(1,0,0,36)
-    builtRow.BackgroundTransparency = 1; builtRow.Parent = offsetPage; listLayout(builtRow,6,Enum.FillDirection.Horizontal)
+    builtRow.BackgroundTransparency = 1; builtRow.Parent = offsetPage
+    listLayout(builtRow,6,Enum.FillDirection.Horizontal)
 
     local BUILTIN = {
-        {name="Sky",     x=0,    y=150000, z=0,      col=Color3.fromRGB(80,148,228)},
-        {name="Void",    x=0,    y=-150000,z=0,      col=Color3.fromRGB(138,82,218)},
-        {name="Behind",  x=0,    y=0,      z=150000,  col=Color3.fromRGB(218,130,52)},
-        {name="Faraway", x=150000,y=0,     z=0,      col=Color3.fromRGB(218,82,82)},
-        {name="Origin",  x=0,    y=0,      z=0,      col=Color3.fromRGB(122,186,136)},
+        {name="sky",     x=0,      y=150000, z=0,      col=Color3.fromRGB(80,148,228)},
+        {name="void",    x=0,      y=-150000,z=0,      col=Color3.fromRGB(138,82,218)},
+        {name="behind",  x=0,      y=0,      z=150000, col=Color3.fromRGB(218,130,52)},
+        {name="faraway", x=150000, y=0,      z=0,      col=Color3.fromRGB(218,82,82)},
+        {name="origin",  x=0,      y=0,      z=0,      col=Color3.fromRGB(122,186,136)},
     }
     local activeBuiltin, builtinBtns = nil, {}
     for i, p in ipairs(BUILTIN) do
-        local btn = Instance.new("TextButton"); btn.Size = UDim2.new(1/#BUILTIN,-(6*(#BUILTIN-1)/#BUILTIN),1,0)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1/#BUILTIN,-(6*(#BUILTIN-1)/#BUILTIN),1,0)
         btn.BackgroundColor3 = T.card; btn.BorderSizePixel = 0; btn.Text = p.name; btn.TextSize = 10
-        btn.Font = Enum.Font.GothamBold; btn.TextColor3 = p.col; btn.AutoButtonColor = false; btn.LayoutOrder = i; btn.Parent = builtRow
+        btn.Font = FONT_BOLD; btn.TextColor3 = p.col; btn.AutoButtonColor = false; btn.LayoutOrder = i; btn.Parent = builtRow
         corner(btn,8); stroke(btn,T.border); builtinBtns[p.name] = btn
         btn.MouseEnter:Connect(function() if activeBuiltin ~= p.name then tw(btn,{BackgroundColor3=T.cardH}) end end)
         btn.MouseLeave:Connect(function() if activeBuiltin ~= p.name then tw(btn,{BackgroundColor3=T.card}) end end)
@@ -613,39 +654,44 @@ local function buildGUI()
     end
 
     -- Saved presets
-    sectionLabel(offsetPage,"SAVED PRESETS")
+    sectionLabel(offsetPage,"saved presets")
     local saveRow = Instance.new("Frame"); saveRow.Size = UDim2.new(1,0,0,36)
-    saveRow.BackgroundColor3 = T.card; saveRow.BorderSizePixel = 0; saveRow.Parent = offsetPage; corner(saveRow,8); stroke(saveRow,T.border)
+    saveRow.BackgroundColor3 = T.card; saveRow.BorderSizePixel = 0; saveRow.Parent = offsetPage
+    corner(saveRow,8); stroke(saveRow,T.border)
     local nameBox = Instance.new("TextBox"); nameBox.Size = UDim2.new(1,-82,1,-10); nameBox.Position = UDim2.new(0,10,0,5)
-    nameBox.BackgroundColor3 = T.surface; nameBox.BorderSizePixel = 0; nameBox.PlaceholderText = "Preset name..."
+    nameBox.BackgroundColor3 = T.surface; nameBox.BorderSizePixel = 0; nameBox.PlaceholderText = "preset name..."
     nameBox.PlaceholderColor3 = T.sub; nameBox.Text = ""; nameBox.TextColor3 = T.text; nameBox.TextSize = 12
-    nameBox.Font = Enum.Font.Gotham; nameBox.ClearTextOnFocus = false; nameBox.Parent = saveRow; corner(nameBox,6)
+    nameBox.Font = FONT; nameBox.ClearTextOnFocus = false; nameBox.Parent = saveRow
+    corner(nameBox,6)
     local savePresetBtn = Instance.new("TextButton"); savePresetBtn.Size = UDim2.new(0,64,1,-10); savePresetBtn.Position = UDim2.new(1,-72,0,5)
-    savePresetBtn.BackgroundColor3 = T.accent; savePresetBtn.BorderSizePixel = 0; savePresetBtn.Text = "Save"
-    savePresetBtn.TextColor3 = Color3.fromRGB(14,14,14); savePresetBtn.TextSize = 12; savePresetBtn.Font = Enum.Font.GothamBold
-    savePresetBtn.AutoButtonColor = false; savePresetBtn.Parent = saveRow; corner(savePresetBtn,6)
+    savePresetBtn.BackgroundColor3 = T.accent; savePresetBtn.BorderSizePixel = 0; savePresetBtn.Text = "save"
+    savePresetBtn.TextColor3 = Color3.fromRGB(14,14,14); savePresetBtn.TextSize = 12; savePresetBtn.Font = FONT_BOLD
+    savePresetBtn.AutoButtonColor = false; savePresetBtn.Parent = saveRow
+    corner(savePresetBtn,6)
     savePresetBtn.MouseEnter:Connect(function() tw(savePresetBtn,{BackgroundColor3=T.accentH}) end)
     savePresetBtn.MouseLeave:Connect(function() tw(savePresetBtn,{BackgroundColor3=T.accent}) end)
 
     local customFrame = Instance.new("Frame"); customFrame.Size = UDim2.new(1,0,0,0)
-    customFrame.BackgroundTransparency = 1; customFrame.AutomaticSize = Enum.AutomaticSize.Y; customFrame.Parent = offsetPage
-    listLayout(customFrame,4)
+    customFrame.BackgroundTransparency = 1; customFrame.AutomaticSize = Enum.AutomaticSize.Y
+    customFrame.Parent = offsetPage; listLayout(customFrame,4)
 
     local customRows = {}
     local function rebuildCustom()
         for _,r in pairs(customRows) do r:Destroy() end; customRows = {}
         for i, cp in ipairs(customPresets) do
             local row = Instance.new("Frame"); row.Size = UDim2.new(1,0,0,38); row.LayoutOrder = i
-            row.BackgroundColor3 = T.card; row.BorderSizePixel = 0; row.Parent = customFrame; corner(row,8); table.insert(customRows,row)
-            local applyBtn = Instance.new("TextButton"); applyBtn.Size = UDim2.new(1,-50,1,0); applyBtn.BackgroundTransparency = 1
-            applyBtn.AutoButtonColor = false; applyBtn.TextXAlignment = Enum.TextXAlignment.Left; applyBtn.Parent = row
+            row.BackgroundColor3 = T.card; row.BorderSizePixel = 0; row.Parent = customFrame
+            corner(row,8); table.insert(customRows,row)
+            local applyBtn = Instance.new("TextButton"); applyBtn.Size = UDim2.new(1,-50,1,0)
+            applyBtn.BackgroundTransparency = 1; applyBtn.AutoButtonColor = false
+            applyBtn.TextXAlignment = Enum.TextXAlignment.Left; applyBtn.Parent = row
             local nameLbl = Instance.new("TextLabel"); nameLbl.Size = UDim2.new(1,0,0,18); nameLbl.Position = UDim2.new(0,0,0,4)
-            nameLbl.BackgroundTransparency = 1; nameLbl.Text = cp.name; nameLbl.TextSize = 12; nameLbl.Font = Enum.Font.GothamBold
+            nameLbl.BackgroundTransparency = 1; nameLbl.Text = cp.name; nameLbl.TextSize = 12; nameLbl.Font = FONT_BOLD
             nameLbl.TextColor3 = T.accent; nameLbl.TextXAlignment = Enum.TextXAlignment.Left; nameLbl.Parent = applyBtn
             local lp = Instance.new("UIPadding"); lp.PaddingLeft = UDim.new(0,10); lp.Parent = nameLbl
             local coordLbl = Instance.new("TextLabel"); coordLbl.Size = UDim2.new(1,0,0,12); coordLbl.Position = UDim2.new(0,0,1,-14)
             coordLbl.BackgroundTransparency = 1; coordLbl.Text = cp.x.." / "..cp.y.." / "..cp.z
-            coordLbl.TextSize = 9; coordLbl.Font = Enum.Font.Gotham; coordLbl.TextColor3 = T.sub
+            coordLbl.TextSize = 9; coordLbl.Font = FONT; coordLbl.TextColor3 = T.sub
             coordLbl.TextXAlignment = Enum.TextXAlignment.Left; coordLbl.Parent = applyBtn
             local lp2 = Instance.new("UIPadding"); lp2.PaddingLeft = UDim.new(0,10); lp2.Parent = coordLbl
             applyBtn.MouseButton1Click:Connect(function()
@@ -653,11 +699,14 @@ local function buildGUI()
                 tw(row,{BackgroundColor3=T.accentD}); task.delay(0.3,function() tw(row,{BackgroundColor3=T.card}) end)
             end)
             local delBtn = Instance.new("TextButton"); delBtn.Size = UDim2.new(0,26,0,26); delBtn.Position = UDim2.new(1,-34,0.5,-13)
-            delBtn.BackgroundColor3 = T.red; delBtn.BorderSizePixel = 0; delBtn.Text = "✕"; delBtn.TextColor3 = Color3.fromRGB(255,255,255)
-            delBtn.TextSize = 10; delBtn.Font = Enum.Font.GothamBold; delBtn.AutoButtonColor = false; delBtn.Parent = row; corner(delBtn,5)
+            delBtn.BackgroundColor3 = T.red; delBtn.BorderSizePixel = 0; delBtn.Text = "✕"
+            delBtn.TextColor3 = Color3.fromRGB(255,255,255); delBtn.TextSize = 10; delBtn.Font = FONT_BOLD
+            delBtn.AutoButtonColor = false; delBtn.Parent = row
+            corner(delBtn,5)
             delBtn.MouseEnter:Connect(function() tw(delBtn,{BackgroundColor3=T.redH}) end)
             delBtn.MouseLeave:Connect(function() tw(delBtn,{BackgroundColor3=T.red}) end)
-            local ci = i; delBtn.MouseButton1Click:Connect(function() table.remove(customPresets,ci); saveAll(); rebuildCustom() end)
+            local ci = i
+            delBtn.MouseButton1Click:Connect(function() table.remove(customPresets,ci); saveAll(); rebuildCustom() end)
             row.MouseEnter:Connect(function() tw(row,{BackgroundColor3=T.cardH}) end)
             row.MouseLeave:Connect(function() tw(row,{BackgroundColor3=T.card}) end)
         end
@@ -666,11 +715,13 @@ local function buildGUI()
     savePresetBtn.MouseButton1Click:Connect(function()
         local n = nameBox.Text:match("^%s*(.-)%s*$")
         if n == "" then
-            tw(nameBox,{BackgroundColor3=Color3.fromRGB(48,18,18)}); task.delay(0.5,function() tw(nameBox,{BackgroundColor3=T.surface}) end); return
+            tw(nameBox,{BackgroundColor3=Color3.fromRGB(48,18,18)})
+            task.delay(0.5,function() tw(nameBox,{BackgroundColor3=T.surface}) end); return
         end
-        customPresets[#customPresets+1] = {name=n, x=state.x, y=state.y, z=state.z}; saveAll(); nameBox.Text = ""
+        customPresets[#customPresets+1] = {name=n, x=state.x, y=state.y, z=state.z}
+        saveAll(); nameBox.Text = ""
         savePresetBtn.Text = "✓"; tw(savePresetBtn,{BackgroundColor3=T.accentH})
-        task.delay(0.8,function() savePresetBtn.Text = "Save"; tw(savePresetBtn,{BackgroundColor3=T.accent}) end)
+        task.delay(0.8,function() savePresetBtn.Text = "save"; tw(savePresetBtn,{BackgroundColor3=T.accent}) end)
         rebuildCustom()
     end)
     rebuildCustom()
@@ -678,12 +729,13 @@ local function buildGUI()
     -- ════════════════════════════════════════════════════════════════════
     --  TARGETS PAGE
     -- ════════════════════════════════════════════════════════════════════
-    -- Search box
     local searchBox = Instance.new("TextBox"); searchBox.Size = UDim2.new(1,0,0,32)
-    searchBox.BackgroundColor3 = T.card; searchBox.BorderSizePixel = 0; searchBox.PlaceholderText = "🔍  Search players..."
-    searchBox.PlaceholderColor3 = T.sub; searchBox.Text = ""; searchBox.TextColor3 = T.text
-    searchBox.TextSize = 12; searchBox.Font = Enum.Font.Gotham; searchBox.ClearTextOnFocus = false
-    searchBox.Parent = targetPage; corner(searchBox,8); stroke(searchBox,T.border)
+    searchBox.BackgroundColor3 = T.card; searchBox.BorderSizePixel = 0
+    searchBox.PlaceholderText = "🔍  search players..."
+    searchBox.PlaceholderColor3 = T.sub; searchBox.Text = ""
+    searchBox.TextColor3 = T.text; searchBox.TextSize = 12; searchBox.Font = FONT
+    searchBox.ClearTextOnFocus = false; searchBox.Parent = targetPage
+    corner(searchBox,8); stroke(searchBox,T.border)
     local sbPad = Instance.new("UIPadding"); sbPad.PaddingLeft = UDim.new(0,10); sbPad.PaddingRight = UDim.new(0,10); sbPad.Parent = searchBox
 
     local targetRowsList = {}
@@ -693,29 +745,42 @@ local function buildGUI()
 
         -- Target All row
         local taRow = Instance.new("Frame"); taRow.Size = UDim2.new(1,0,0,50); taRow.LayoutOrder = 0
-        taRow.BackgroundColor3 = T.card; taRow.BorderSizePixel = 0; taRow.Parent = targetPage; corner(taRow,10)
+        taRow.BackgroundColor3 = T.card; taRow.BorderSizePixel = 0; taRow.Parent = targetPage
+        corner(taRow,10)
         stroke(taRow, state.targetAll and T.accentD or T.border, state.targetAll and 1.5 or 1)
         table.insert(targetRowsList, taRow)
+
         local taIconF = Instance.new("Frame"); taIconF.Size = UDim2.new(0,38,0,38); taIconF.Position = UDim2.new(0,6,0.5,-19)
-        taIconF.BackgroundColor3 = state.targetAll and T.accentD or T.surface; taIconF.BorderSizePixel = 0; taIconF.Parent = taRow; corner(taIconF,19)
-        local taIconL = Instance.new("TextLabel"); taIconL.Size = UDim2.new(1,0,1,0); taIconL.BackgroundTransparency = 1; taIconL.Text = "★"
-        taIconL.TextSize = 16; taIconL.Font = Enum.Font.GothamBold; taIconL.TextColor3 = state.targetAll and T.accent or T.sub
+        taIconF.BackgroundColor3 = state.targetAll and T.accentD or T.surface; taIconF.BorderSizePixel = 0; taIconF.Parent = taRow
+        corner(taIconF,19)
+        local taIconL = Instance.new("TextLabel"); taIconL.Size = UDim2.new(1,0,1,0); taIconL.BackgroundTransparency = 1
+        taIconL.Text = "★"; taIconL.TextSize = 16; taIconL.Font = FONT_BOLD
+        taIconL.TextColor3 = state.targetAll and T.accent or T.sub
         taIconL.TextXAlignment = Enum.TextXAlignment.Center; taIconL.Parent = taIconF
+
         local taName = Instance.new("TextLabel"); taName.Size = UDim2.new(1,-106,0,18); taName.Position = UDim2.new(0,52,0,7)
-        taName.BackgroundTransparency = 1; taName.Text = "Target All"; taName.TextSize = 13; taName.Font = Enum.Font.GothamBold
+        taName.BackgroundTransparency = 1; taName.Text = "target all"; taName.TextSize = 13; taName.Font = FONT_BOLD
         taName.TextColor3 = state.targetAll and T.text or T.sub; taName.TextXAlignment = Enum.TextXAlignment.Left; taName.Parent = taRow
+
         local taDesc = Instance.new("TextLabel"); taDesc.Size = UDim2.new(1,-106,0,13); taDesc.Position = UDim2.new(0,52,0,26)
-        taDesc.BackgroundTransparency = 1; taDesc.Text = "Spoofs every player in server"
-        taDesc.TextSize = 10; taDesc.Font = Enum.Font.Gotham; taDesc.TextColor3 = T.sub; taDesc.TextXAlignment = Enum.TextXAlignment.Left; taDesc.Parent = taRow
+        taDesc.BackgroundTransparency = 1; taDesc.Text = "spoofs every player in server"
+        taDesc.TextSize = 10; taDesc.Font = FONT; taDesc.TextColor3 = T.sub
+        taDesc.TextXAlignment = Enum.TextXAlignment.Left; taDesc.Parent = taRow
+
         local taPill = Instance.new("Frame"); taPill.Size = UDim2.new(0,40,0,22); taPill.Position = UDim2.new(1,-48,0.5,-11)
-        taPill.BackgroundColor3 = state.targetAll and T.accent or T.border; taPill.BorderSizePixel = 0; taPill.Parent = taRow; corner(taPill,11)
+        taPill.BackgroundColor3 = state.targetAll and T.accent or T.border; taPill.BorderSizePixel = 0; taPill.Parent = taRow
+        corner(taPill,11)
         local taPT = Instance.new("Frame"); taPT.Size = UDim2.new(0,15,0,15)
         taPT.Position = state.targetAll and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
-        taPT.BackgroundColor3 = Color3.fromRGB(240,240,240); taPT.BorderSizePixel = 0; taPT.Parent = taPill; corner(taPT,8)
-        local taClick = Instance.new("TextButton"); taClick.Size = UDim2.new(1,0,1,0); taClick.BackgroundTransparency = 1; taClick.Text = ""; taClick.Parent = taRow
+        taPT.BackgroundColor3 = Color3.fromRGB(240,240,240); taPT.BorderSizePixel = 0; taPT.Parent = taPill
+        corner(taPT,8)
+        local taClick = Instance.new("TextButton"); taClick.Size = UDim2.new(1,0,1,0)
+        taClick.BackgroundTransparency = 1; taClick.Text = ""; taClick.Parent = taRow
         taClick.MouseButton1Click:Connect(function()
-            state.targetAll = not state.targetAll; state.enabled = state.targetAll
-            if state.enabled then startSpoof() end; updateStatus(); rebuildTargets()
+            state.targetAll = not state.targetAll
+            state.enabled = state.targetAll
+            if state.enabled then startSpoof() end
+            updateStatus(); rebuildTargets()
         end)
         taRow.MouseEnter:Connect(function() tw(taRow,{BackgroundColor3=T.cardH}) end)
         taRow.MouseLeave:Connect(function() tw(taRow,{BackgroundColor3=T.card}) end)
@@ -729,35 +794,54 @@ local function buildGUI()
                 if nameMatch then
                     local active = targeted[p.Name] == true
                     local row = Instance.new("Frame"); row.Size = UDim2.new(1,0,0,54); row.LayoutOrder = idx
-                    row.BackgroundColor3 = T.card; row.BorderSizePixel = 0; row.Parent = targetPage; corner(row,10)
-                    stroke(row, active and T.accentD or T.border, active and 1.5 or 1); table.insert(targetRowsList,row)
+                    row.BackgroundColor3 = T.card; row.BorderSizePixel = 0; row.Parent = targetPage
+                    corner(row,10)
+                    stroke(row, active and T.accentD or T.border, active and 1.5 or 1)
+                    table.insert(targetRowsList,row)
+
                     local avaCircle = Instance.new("Frame"); avaCircle.Size = UDim2.new(0,40,0,40); avaCircle.Position = UDim2.new(0,7,0.5,-20)
-                    avaCircle.BackgroundColor3 = T.surface; avaCircle.BorderSizePixel = 0; avaCircle.ClipsDescendants = true; avaCircle.Parent = row; corner(avaCircle,20)
+                    avaCircle.BackgroundColor3 = T.surface; avaCircle.BorderSizePixel = 0
+                    avaCircle.ClipsDescendants = true; avaCircle.Parent = row
+                    corner(avaCircle,20)
                     if active then stroke(avaCircle,T.accent,2) end
-                    local avaImg = Instance.new("ImageLabel"); avaImg.Size = UDim2.new(1,0,1,0); avaImg.BackgroundTransparency = 1; avaImg.Image = ""; avaImg.Parent = avaCircle
+                    local avaImg = Instance.new("ImageLabel"); avaImg.Size = UDim2.new(1,0,1,0)
+                    avaImg.BackgroundTransparency = 1; avaImg.Image = ""; avaImg.Parent = avaCircle
                     local uid = p.UserId
                     task.spawn(function()
-                        local ok,img = pcall(function() return Players:GetUserThumbnailAsync(uid,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size48x48) end)
+                        local ok,img = pcall(function()
+                            return Players:GetUserThumbnailAsync(uid,Enum.ThumbnailType.HeadShot,Enum.ThumbnailSize.Size48x48)
+                        end)
                         if ok and img then avaImg.Image = img end
                     end)
+
                     local dispN = Instance.new("TextLabel"); dispN.Size = UDim2.new(1,-106,0,18); dispN.Position = UDim2.new(0,55,0,9)
-                    dispN.BackgroundTransparency = 1; dispN.Text = p.DisplayName; dispN.TextSize = 13; dispN.Font = Enum.Font.GothamBold
-                    dispN.TextColor3 = active and T.text or T.sub; dispN.TextXAlignment = Enum.TextXAlignment.Left; dispN.TextTruncate = Enum.TextTruncate.AtEnd; dispN.Parent = row
+                    dispN.BackgroundTransparency = 1; dispN.Text = p.DisplayName; dispN.TextSize = 13; dispN.Font = FONT_BOLD
+                    dispN.TextColor3 = active and T.text or T.sub; dispN.TextXAlignment = Enum.TextXAlignment.Left
+                    dispN.TextTruncate = Enum.TextTruncate.AtEnd; dispN.Parent = row
+
                     local userN = Instance.new("TextLabel"); userN.Size = UDim2.new(1,-106,0,13); userN.Position = UDim2.new(0,55,0,29)
-                    userN.BackgroundTransparency = 1; userN.Text = "@"..p.Name; userN.TextSize = 10; userN.Font = Enum.Font.Gotham
-                    userN.TextColor3 = T.sub; userN.TextXAlignment = Enum.TextXAlignment.Left; userN.TextTruncate = Enum.TextTruncate.AtEnd; userN.Parent = row
+                    userN.BackgroundTransparency = 1; userN.Text = "@"..p.Name; userN.TextSize = 10; userN.Font = FONT
+                    userN.TextColor3 = T.sub; userN.TextXAlignment = Enum.TextXAlignment.Left
+                    userN.TextTruncate = Enum.TextTruncate.AtEnd; userN.Parent = row
+
                     local pPill = Instance.new("Frame"); pPill.Size = UDim2.new(0,40,0,22); pPill.Position = UDim2.new(1,-48,0.5,-11)
-                    pPill.BackgroundColor3 = active and T.accent or T.border; pPill.BorderSizePixel = 0; pPill.Parent = row; corner(pPill,11)
+                    pPill.BackgroundColor3 = active and T.accent or T.border; pPill.BorderSizePixel = 0; pPill.Parent = row
+                    corner(pPill,11)
                     local pPT = Instance.new("Frame"); pPT.Size = UDim2.new(0,15,0,15)
                     pPT.Position = active and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
-                    pPT.BackgroundColor3 = Color3.fromRGB(240,240,240); pPT.BorderSizePixel = 0; pPT.Parent = pPill; corner(pPT,8)
-                    local clickable = Instance.new("TextButton"); clickable.Size = UDim2.new(1,0,1,0); clickable.BackgroundTransparency = 1; clickable.Text = ""; clickable.Parent = row
+                    pPT.BackgroundColor3 = Color3.fromRGB(240,240,240); pPT.BorderSizePixel = 0; pPT.Parent = pPill
+                    corner(pPT,8)
+
+                    local clickable = Instance.new("TextButton"); clickable.Size = UDim2.new(1,0,1,0)
+                    clickable.BackgroundTransparency = 1; clickable.Text = ""; clickable.Parent = row
                     local pName = p.Name
                     clickable.MouseButton1Click:Connect(function()
                         targeted[pName] = not targeted[pName]
-                        local any = false; for _,v in pairs(targeted) do if v then any = true end end
+                        local any = false
+                        for _,v in pairs(targeted) do if v then any = true end end
                         state.enabled = any or state.targetAll
-                        if state.enabled then startSpoof() end; updateStatus(); rebuildTargets()
+                        if state.enabled then startSpoof() end
+                        updateStatus(); rebuildTargets()
                     end)
                     row.MouseEnter:Connect(function() tw(row,{BackgroundColor3=T.cardH}) end)
                     row.MouseLeave:Connect(function() tw(row,{BackgroundColor3=T.card}) end)
@@ -773,17 +857,20 @@ local function buildGUI()
     -- ════════════════════════════════════════════════════════════════════
     --  SETTINGS PAGE
     -- ════════════════════════════════════════════════════════════════════
-    sectionLabel(settingsPage,"KEYBINDS",0)
+    sectionLabel(settingsPage,"keybinds",0)
 
     local function makeKeybindCard(parent, descText, getKey, setKey, lo)
         local kbCard = Instance.new("Frame"); kbCard.Size = UDim2.new(1,0,0,44); kbCard.LayoutOrder = lo or 0
-        kbCard.BackgroundColor3 = T.card; kbCard.BorderSizePixel = 0; kbCard.Parent = parent; corner(kbCard,8); stroke(kbCard,T.border)
+        kbCard.BackgroundColor3 = T.card; kbCard.BorderSizePixel = 0; kbCard.Parent = parent
+        corner(kbCard,8); stroke(kbCard,T.border)
         local kbDesc = Instance.new("TextLabel"); kbDesc.Size = UDim2.new(1,-110,1,0); kbDesc.Position = UDim2.new(0,12,0,0)
-        kbDesc.BackgroundTransparency = 1; kbDesc.Text = descText; kbDesc.TextSize = 12; kbDesc.Font = Enum.Font.Gotham; kbDesc.TextColor3 = T.text
-        kbDesc.TextXAlignment = Enum.TextXAlignment.Left; kbDesc.Parent = kbCard
+        kbDesc.BackgroundTransparency = 1; kbDesc.Text = descText:lower(); kbDesc.TextSize = 12; kbDesc.Font = FONT
+        kbDesc.TextColor3 = T.text; kbDesc.TextXAlignment = Enum.TextXAlignment.Left; kbDesc.Parent = kbCard
         local kbBtn = Instance.new("TextButton"); kbBtn.Size = UDim2.new(0,90,0,28); kbBtn.Position = UDim2.new(1,-98,0.5,-14)
-        kbBtn.BackgroundColor3 = T.surface; kbBtn.BorderSizePixel = 0; kbBtn.Text = getKey().Name; kbBtn.TextSize = 11; kbBtn.Font = Enum.Font.GothamBold
-        kbBtn.TextColor3 = T.accent; kbBtn.AutoButtonColor = false; kbBtn.Parent = kbCard; corner(kbBtn,6); stroke(kbBtn,T.accentD)
+        kbBtn.BackgroundColor3 = T.surface; kbBtn.BorderSizePixel = 0; kbBtn.Text = getKey().Name
+        kbBtn.TextSize = 11; kbBtn.Font = FONT_BOLD; kbBtn.TextColor3 = T.accent
+        kbBtn.AutoButtonColor = false; kbBtn.Parent = kbCard
+        corner(kbBtn,6); stroke(kbBtn,T.accentD)
         local listening = false
         kbBtn.MouseButton1Click:Connect(function()
             if listening then return end; listening = true; kbBtn.Text = "..."; kbBtn.TextColor3 = T.yellow
@@ -799,59 +886,66 @@ local function buildGUI()
         kbBtn.MouseLeave:Connect(function() if not listening then tw(kbBtn,{BackgroundColor3=T.surface}) end end)
     end
 
-    local spoofBusy, guiBusy = false, false
-    makeKeybindCard(settingsPage,"Toggle Spoof On/Off",
+    makeKeybindCard(settingsPage,"toggle spoof on/off",
         function() return state.spoofKey end, function(k) state.spoofKey=k end, 1)
-    makeKeybindCard(settingsPage,"Open / Close Menu",
+    makeKeybindCard(settingsPage,"open / close menu",
         function() return state.guiKey end, function(k) state.guiKey=k end, 2)
 
-    -- FOV visualizer toggle
-    sectionLabel(settingsPage,"FOV VISUALIZER",3)
+    -- FOV visualizer
+    sectionLabel(settingsPage,"fov visualizer",3)
     local fovCard = Instance.new("Frame"); fovCard.Size = UDim2.new(1,0,0,44); fovCard.LayoutOrder = 4
-    fovCard.BackgroundColor3 = T.card; fovCard.BorderSizePixel = 0; fovCard.Parent = settingsPage; corner(fovCard,8); stroke(fovCard,T.border)
+    fovCard.BackgroundColor3 = T.card; fovCard.BorderSizePixel = 0; fovCard.Parent = settingsPage
+    corner(fovCard,8); stroke(fovCard,T.border)
     local fovLbl = Instance.new("TextLabel"); fovLbl.Size = UDim2.new(1,-60,1,0); fovLbl.Position = UDim2.new(0,12,0,0)
-    fovLbl.BackgroundTransparency = 1; fovLbl.Text = "Show FOV Circle"; fovLbl.TextSize = 13; fovLbl.Font = Enum.Font.GothamBold
+    fovLbl.BackgroundTransparency = 1; fovLbl.Text = "show fov circle"; fovLbl.TextSize = 13; fovLbl.Font = FONT_BOLD
     fovLbl.TextColor3 = T.text; fovLbl.TextXAlignment = Enum.TextXAlignment.Left; fovLbl.Parent = fovCard
-    local _fovPill, setFovPill = makePillToggle(fovCard, state.fovEnabled, function(v)
+    local _fovPill, _ = makePillToggle(fovCard, state.fovEnabled, function(v)
         state.fovEnabled = v
         if v then buildFOVGui(gui) else destroyFOVGui() end; saveAll()
     end)
     _fovPill.Position = UDim2.new(1,-52,0.5,-11); _fovPill.Parent = fovCard
-    makeSlider(settingsPage,"FOV RANGE",5,180,state.fovRange,function(v) state.fovRange=v; saveAll() end, T.yellow)
+    makeSlider(settingsPage,"fov range",5,180,state.fovRange,function(v) state.fovRange=v; saveAll() end, T.yellow)
 
     -- File info
-    sectionLabel(settingsPage,"FILE",6)
+    sectionLabel(settingsPage,"file",6)
     local fileCard = Instance.new("Frame"); fileCard.Size = UDim2.new(1,0,0,44); fileCard.LayoutOrder = 7
-    fileCard.BackgroundColor3 = T.card; fileCard.BorderSizePixel = 0; fileCard.Parent = settingsPage; corner(fileCard,8); stroke(fileCard,T.border)
+    fileCard.BackgroundColor3 = T.card; fileCard.BorderSizePixel = 0; fileCard.Parent = settingsPage
+    corner(fileCard,8); stroke(fileCard,T.border)
     local fTitle = Instance.new("TextLabel"); fTitle.Size = UDim2.new(1,-20,0,20); fTitle.Position = UDim2.new(0,12,0,6)
-    fTitle.BackgroundTransparency = 1; fTitle.Text = "Preset + Settings Storage"; fTitle.TextSize = 12; fTitle.Font = Enum.Font.GothamBold
-    fTitle.TextColor3 = T.text; fTitle.TextXAlignment = Enum.TextXAlignment.Left; fTitle.Parent = fileCard
+    fTitle.BackgroundTransparency = 1; fTitle.Text = "preset + settings storage"
+    fTitle.TextSize = 12; fTitle.Font = FONT_BOLD; fTitle.TextColor3 = T.text
+    fTitle.TextXAlignment = Enum.TextXAlignment.Left; fTitle.Parent = fileCard
     local fSub = Instance.new("TextLabel"); fSub.Size = UDim2.new(1,-20,0,14); fSub.Position = UDim2.new(0,12,0,26)
     fSub.BackgroundTransparency = 1
-    fSub.Text = (writefile and isfile) and "● Saving to "..SAVE_FILE or "● writefile unavailable — session only"
-    fSub.TextSize = 10; fSub.Font = Enum.Font.Gotham; fSub.TextXAlignment = Enum.TextXAlignment.Left
+    fSub.Text = (writefile and isfile) and "● saving to "..SAVE_FILE or "● writefile unavailable — session only"
+    fSub.TextSize = 10; fSub.Font = FONT; fSub.TextXAlignment = Enum.TextXAlignment.Left
     fSub.TextColor3 = (writefile and isfile) and T.accent or T.red; fSub.Parent = fileCard
 
-    -- Unload
-    sectionLabel(settingsPage,"DANGER ZONE",8)
+    -- Danger zone
+    sectionLabel(settingsPage,"danger zone",8)
     local unloadBtn = Instance.new("TextButton"); unloadBtn.Size = UDim2.new(1,0,0,40); unloadBtn.LayoutOrder = 9
     unloadBtn.BackgroundColor3 = Color3.fromRGB(50,14,14); unloadBtn.BorderSizePixel = 0
-    unloadBtn.Text = "⏏  Unload UI  (destroys everything)"; unloadBtn.TextSize = 12; unloadBtn.Font = Enum.Font.GothamBold
-    unloadBtn.TextColor3 = T.red; unloadBtn.AutoButtonColor = false; unloadBtn.Parent = settingsPage; corner(unloadBtn,8); stroke(unloadBtn,T.red,1)
+    unloadBtn.Text = "⏏  unload ui  (destroys everything)"; unloadBtn.TextSize = 12; unloadBtn.Font = FONT_BOLD
+    unloadBtn.TextColor3 = T.red; unloadBtn.AutoButtonColor = false; unloadBtn.Parent = settingsPage
+    corner(unloadBtn,8); stroke(unloadBtn,T.red,1)
     unloadBtn.MouseEnter:Connect(function() tw(unloadBtn,{BackgroundColor3=Color3.fromRGB(72,18,18)}) end)
     unloadBtn.MouseLeave:Connect(function() tw(unloadBtn,{BackgroundColor3=Color3.fromRGB(50,14,14)}) end)
     local unloadConfirm = false
     unloadBtn.MouseButton1Click:Connect(function()
         if not unloadConfirm then
-            unloadConfirm = true; unloadBtn.Text = "⚠  Click again to confirm"
+            unloadConfirm = true; unloadBtn.Text = "⚠  click again to confirm"
             tw(unloadBtn,{BackgroundColor3=Color3.fromRGB(100,30,10)})
-            task.delay(3, function() unloadConfirm = false; unloadBtn.Text = "⏏  Unload UI  (destroys everything)"; tw(unloadBtn,{BackgroundColor3=Color3.fromRGB(50,14,14)}) end)
+            task.delay(3, function()
+                unloadConfirm = false
+                unloadBtn.Text = "⏏  unload ui  (destroys everything)"
+                tw(unloadBtn,{BackgroundColor3=Color3.fromRGB(50,14,14)})
+            end)
         else
             saveAll(); cleanup()
         end
     end)
 
-    -- Keybind listener (runs after cards are built so no forward-ref issues)
+    -- Keybind listener
     UserInputService.InputBegan:Connect(function(inp, gp)
         if gp then return end
         if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
@@ -864,84 +958,44 @@ local function buildGUI()
     end)
 
     -- ════════════════════════════════════════════════════════════════════
-    --  MOBILE-ONLY RIGHT-SIDE BUTTON PANEL
-    --  Visible only on TouchEnabled devices (phones/tablets).
-    --  Buttons: Toggle UI | Lock UI
-    --  Styled to match the screenshot — dark bg, red border, plain text.
+    --  MOBILE PANEL
     -- ════════════════════════════════════════════════════════════════════
     local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
-
     if isMobile then
-        local BTN_W    = 110
-        local BTN_H    = 46
-        local BTN_GAP  = 8
-        local BTN_PADX = 10   -- from right edge
-        local BTN_PADY = 120  -- from top
-
-        -- Container so buttons move together
+        local BTN_W, BTN_H, BTN_GAP = 110, 46, 8
         local mobilePanel = Instance.new("Frame")
-        mobilePanel.Name                = "MobilePanel"
-        mobilePanel.Size                = UDim2.new(0, BTN_W, 0, BTN_H*2 + BTN_GAP)
-        mobilePanel.Position            = UDim2.new(1, -(BTN_W + BTN_PADX), 0, BTN_PADY)
-        mobilePanel.BackgroundTransparency = 1
-        mobilePanel.ZIndex              = 30
-        mobilePanel.Parent              = gui
+        mobilePanel.Name = "MobilePanel"
+        mobilePanel.Size = UDim2.new(0,BTN_W,0,BTN_H*2+BTN_GAP)
+        mobilePanel.Position = UDim2.new(1,-(BTN_W+10),0,120)
+        mobilePanel.BackgroundTransparency = 1; mobilePanel.ZIndex = 30; mobilePanel.Parent = gui
 
         local function makeMobileBtn(labelText, yOffset, onClick)
             local btn = Instance.new("TextButton")
-            btn.Size                = UDim2.new(1, 0, 0, BTN_H)
-            btn.Position            = UDim2.new(0, 0, 0, yOffset)
-            btn.BackgroundColor3    = Color3.fromRGB(8, 8, 8)
-            btn.BorderSizePixel     = 0
-            btn.Text                = labelText
-            btn.TextSize            = 14
-            btn.Font                = Enum.Font.GothamBold
-            btn.TextColor3          = Color3.fromRGB(220, 220, 220)
-            btn.AutoButtonColor     = false
-            btn.ZIndex              = 31
-            btn.Parent              = mobilePanel
-            corner(btn, 4)
-            -- Red border matching screenshot
-            local s = Instance.new("UIStroke")
-            s.Color     = Color3.fromRGB(180, 30, 30)
-            s.Thickness = 2
-            s.Parent    = btn
-
+            btn.Size = UDim2.new(1,0,0,BTN_H); btn.Position = UDim2.new(0,0,0,yOffset)
+            btn.BackgroundColor3 = Color3.fromRGB(8,8,8); btn.BorderSizePixel = 0
+            btn.Text = labelText:lower(); btn.TextSize = 14; btn.Font = FONT_BOLD
+            btn.TextColor3 = Color3.fromRGB(220,220,220); btn.AutoButtonColor = false; btn.ZIndex = 31; btn.Parent = mobilePanel
+            corner(btn,4)
+            local s = Instance.new("UIStroke"); s.Color = Color3.fromRGB(180,30,30); s.Thickness = 2; s.Parent = btn
             btn.MouseButton1Click:Connect(onClick)
-
-            -- Press feedback
             btn.InputBegan:Connect(function(inp)
-                if inp.UserInputType == Enum.UserInputType.Touch then
-                    tw(btn, {BackgroundColor3 = Color3.fromRGB(30, 8, 8)})
-                end
+                if inp.UserInputType == Enum.UserInputType.Touch then tw(btn,{BackgroundColor3=Color3.fromRGB(30,8,8)}) end
             end)
             btn.InputEnded:Connect(function(inp)
-                if inp.UserInputType == Enum.UserInputType.Touch then
-                    tw(btn, {BackgroundColor3 = Color3.fromRGB(8, 8, 8)})
-                end
+                if inp.UserInputType == Enum.UserInputType.Touch then tw(btn,{BackgroundColor3=Color3.fromRGB(8,8,8)}) end
             end)
-
             return btn
         end
 
-        -- Toggle UI button
-        makeMobileBtn("Toggle UI", 0, function()
-            setGuiVisible(not guiVisible)
-        end)
-
-        -- Lock UI button — prevents dragging when locked
+        makeMobileBtn("toggle ui", 0, function() setGuiVisible(not guiVisible) end)
         local lockBtn
-        lockBtn = makeMobileBtn("Lock UI", BTN_H + BTN_GAP, function()
+        lockBtn = makeMobileBtn("lock ui", BTN_H+BTN_GAP, function()
             guiLocked = not guiLocked
-            -- Visual feedback: border turns green when locked
             local s = lockBtn:FindFirstChildOfClass("UIStroke")
-            if s then
-                s.Color = guiLocked and Color3.fromRGB(60,180,80) or Color3.fromRGB(180,30,30)
-            end
-            lockBtn.Text = guiLocked and "Locked 🔒" or "Lock UI"
+            if s then s.Color = guiLocked and Color3.fromRGB(60,180,80) or Color3.fromRGB(180,30,30) end
+            lockBtn.Text = guiLocked and "locked 🔒" or "lock ui"
         end)
 
-        -- Make the panel itself draggable so players can reposition it
         local panDragging, panStart, panOrig = false, nil, nil
         mobilePanel.InputBegan:Connect(function(inp)
             if inp.UserInputType == Enum.UserInputType.Touch then
@@ -954,15 +1008,12 @@ local function buildGUI()
         UserInputService.InputChanged:Connect(function(inp)
             if panDragging and inp.UserInputType == Enum.UserInputType.Touch then
                 local d = inp.Position - panStart
-                mobilePanel.Position = UDim2.new(
-                    panOrig.X.Scale, panOrig.X.Offset + d.X,
-                    panOrig.Y.Scale, panOrig.Y.Offset + d.Y
-                )
+                mobilePanel.Position = UDim2.new(panOrig.X.Scale,panOrig.X.Offset+d.X,panOrig.Y.Scale,panOrig.Y.Offset+d.Y)
             end
         end)
     end
 
-    -- ── Init ──────────────────────────────────────────────────────────
+    -- ── Init
     switchTab(1); rebuildTargets(); updateStatus()
 end
 
@@ -971,7 +1022,7 @@ end
 -- ════════════════════════════════════════════════════════════════════════════
 local function init()
     cleanup(); buildGUI()
-    state.enabled = true; startSpoof()
+    state.enabled = false  -- start disabled; user enables via keybind or targeting
 end
 
 init()
