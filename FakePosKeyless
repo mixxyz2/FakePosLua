@@ -20,12 +20,13 @@ local SAVE_FILE = "FakePosClean.json"
 local state = {
     x = 0, y = 1000, z = 0,
     enabled      = false,
-    targetAll    = false,   -- OFF by default on inject
+    targetAll    = false,
     stickEnabled = false,
     spoofKey = Enum.KeyCode.RightControl,
     guiKey   = Enum.KeyCode.RightShift,
-    fovEnabled = false,
-    fovRange   = 60,
+    fovEnabled    = false,
+    fovRange      = 60,
+    showMobilePanel = true,  -- show overlay buttons for all users (mobile + PC)
 }
 
 local targeted     = {}
@@ -58,7 +59,6 @@ local T = {
 local FONT      = Enum.Font.Arial
 local FONT_BOLD = Enum.Font.ArialBold
 
-
 -- ════════════════════════════════════════════════════════════════════════════
 --  PERSISTENCE
 -- ════════════════════════════════════════════════════════════════════════════
@@ -68,10 +68,11 @@ local function jsonStr(src, key) return src:match('"'..key..'":"([^"]*)"') end
 
 local function serSettings()
     return string.format(
-        '{"spoofKey":"%s","guiKey":"%s","stickEnabled":%s,"fovEnabled":%s,"fovRange":%d}',
+        '{"spoofKey":"%s","guiKey":"%s","stickEnabled":%s,"fovEnabled":%s,"fovRange":%d,"showMobilePanel":%s}',
         state.spoofKey.Name, state.guiKey.Name,
         tostring(state.stickEnabled),
-        tostring(state.fovEnabled), state.fovRange
+        tostring(state.fovEnabled), state.fovRange,
+        tostring(state.showMobilePanel)
     )
 end
 
@@ -101,9 +102,10 @@ local function loadAll()
         local sk = jsonStr(sb,"spoofKey"); local gk = jsonStr(sb,"guiKey")
         if sk then local o,k=pcall(function() return Enum.KeyCode[sk] end); if o and k then state.spoofKey=k end end
         if gk then local o,k=pcall(function() return Enum.KeyCode[gk] end); if o and k then state.guiKey=k end end
-        state.stickEnabled = (sb:match('"stickEnabled":(%a+)') or "false") == "true"
-        state.fovEnabled   = (sb:match('"fovEnabled":(%a+)')   or "false") == "true"
-        state.fovRange     = jsonNum(sb,"fovRange") or state.fovRange
+        state.stickEnabled    = (sb:match('"stickEnabled":(%a+)')    or "false") == "true"
+        state.fovEnabled      = (sb:match('"fovEnabled":(%a+)')      or "false") == "true"
+        state.fovRange        = jsonNum(sb,"fovRange") or state.fovRange
+        state.showMobilePanel = (sb:match('"showMobilePanel":(%a+)') or "true")  == "true"
     end) end
     if pb then pcall(function()
         for e in pb:gmatch("{(.-)}") do
@@ -311,9 +313,13 @@ local function makeSlider(parent, lText, minV, maxV, defV, onChange, accentColor
         v = math.clamp(math.floor(v+0.5),minV,maxV); cur = v
         updateVis(v); valBox.Text = tostring(v); if fire and onChange then onChange(v) end
     end
+    local function setVTyped(v, fire)
+        v = math.floor(v+0.5); cur = v
+        updateVis(v); valBox.Text = tostring(v); if fire and onChange then onChange(v) end
+    end
     setV(defV, false)
     resetBtn.MouseButton1Click:Connect(function()
-        setV(defV,true); tw(resetBtn,{BackgroundColor3=T.accentD})
+        setVTyped(defV,true); tw(resetBtn,{BackgroundColor3=T.accentD})
         task.delay(0.3,function() tw(resetBtn,{BackgroundColor3=T.surface}) end)
     end)
 
@@ -341,7 +347,7 @@ local function makeSlider(parent, lText, minV, maxV, defV, onChange, accentColor
     valBox.FocusLost:Connect(function()
         tw(valBox,{BackgroundColor3=T.inputBG})
         local num = tonumber(valBox.Text:match("^%s*([%-]?%d*%.?%d*)%s*$"))
-        if num then setV(num,true) else valBox.Text = tostring(cur) end
+        if num then setVTyped(num,true) else valBox.Text = tostring(cur) end
     end)
     wrap.MouseEnter:Connect(function() tw(wrap,{BackgroundColor3=T.cardH}) end)
     wrap.MouseLeave:Connect(function() tw(wrap,{BackgroundColor3=T.card}) end)
@@ -365,6 +371,7 @@ local function buildGUI()
     local minimized  = false
     local guiVisible = true
 
+    -- ── Outer window (no ClipsDescendants so UICorner renders cleanly)
     local winFrame = Instance.new("Frame")
     winFrame.Name = "WinFrame"
     winFrame.Size = UDim2.new(0,W,0,FH)
@@ -374,6 +381,7 @@ local function buildGUI()
     winFrame.Parent = gui
     corner(winFrame,12); stroke(winFrame,T.border)
 
+    -- ── Inner clip frame
     local clipInner = Instance.new("Frame")
     clipInner.Name = "ClipInner"
     clipInner.Size = UDim2.new(1,0,1,0)
@@ -385,6 +393,7 @@ local function buildGUI()
     strip.BackgroundColor3 = T.accent; strip.BorderSizePixel = 0; strip.Parent = clipInner
     corner(strip,2)
 
+    -- ── Title bar
     local titleBar = Instance.new("Frame"); titleBar.Size = UDim2.new(1,0,0,44)
     titleBar.BackgroundColor3 = T.surface; titleBar.BorderSizePixel = 0; titleBar.ZIndex = 3; titleBar.Parent = clipInner
     local dragging, dragStart, winStart = false, nil, nil
@@ -460,6 +469,7 @@ local function buildGUI()
         end
     end
 
+    -- ── Tab bar
     local TABS = {"offset", "targets", "settings"}
     local tabBar = Instance.new("Frame"); tabBar.Size = UDim2.new(1,0,0,36); tabBar.Position = UDim2.new(0,0,0,44)
     tabBar.BackgroundColor3 = T.surface; tabBar.BorderSizePixel = 0; tabBar.Parent = clipInner
@@ -507,6 +517,7 @@ local function buildGUI()
         btn.MouseButton1Click:Connect(function() switchTab(i) end)
     end
 
+    -- ── Resize handle
     local HANDLE = 18
     local resizeHandle = Instance.new("TextButton")
     resizeHandle.Size = UDim2.new(0,HANDLE,0,HANDLE)
@@ -598,117 +609,6 @@ local function buildGUI()
         saveAll()
     end)
 
-    -- ════════════════════════════════════════════════════════════════════
-    --  RIVALS STAT SPOOFER  (fixed: searches all player children)
-    -- ════════════════════════════════════════════════════════════════════
-    sectionLabel(offsetPage,"rivals stat spoofer")
-
-    local function makeStatSpoofer(parent, labelText, statName, minV, maxV, defV)
-        local spoofActive = false
-        local conn = nil
-
-        -- ── Searches every folder under LocalPlayer for a stat by name ──
-        local function findStat(name)
-            for _, child in ipairs(LocalPlayer:GetChildren()) do
-                local s = child:FindFirstChild(name)
-                if s then return s end
-            end
-            return nil
-        end
-
-        local function applySpoof()
-            local num = tonumber(valBox and valBox.Text)
-            if not num then return end
-            local stat = findStat(statName)
-            if stat then
-                pcall(function() stat.Value = math.floor(num) end)
-            end
-        end
-
-        local card = Instance.new("Frame"); card.Size = UDim2.new(1,0,0,90)
-        card.BackgroundColor3 = T.card; card.BorderSizePixel = 0; card.Parent = parent
-        corner(card,10); stroke(card,T.border)
-
-        local hdrLbl = Instance.new("TextLabel"); hdrLbl.Size = UDim2.new(1,-60,0,18)
-        hdrLbl.Position = UDim2.new(0,12,0,8); hdrLbl.BackgroundTransparency = 1
-        hdrLbl.Text = labelText:lower(); hdrLbl.TextSize = 12; hdrLbl.Font = FONT_BOLD
-        hdrLbl.TextColor3 = T.text; hdrLbl.TextXAlignment = Enum.TextXAlignment.Left
-        hdrLbl.Parent = card
-
-        local statusLbl = Instance.new("TextLabel"); statusLbl.Size = UDim2.new(0,80,0,18)
-        statusLbl.Position = UDim2.new(1,-92,0,8); statusLbl.BackgroundTransparency = 1
-        statusLbl.Text = "off"; statusLbl.TextSize = 10; statusLbl.Font = FONT_BOLD
-        statusLbl.TextColor3 = T.sub; statusLbl.TextXAlignment = Enum.TextXAlignment.Right
-        statusLbl.Parent = card
-
-        valBox = Instance.new("TextBox"); valBox.Size = UDim2.new(1,-24,0,24)
-        valBox.Position = UDim2.new(0,12,0,32); valBox.BackgroundColor3 = T.inputBG
-        valBox.BorderSizePixel = 0; valBox.Text = tostring(defV)
-        valBox.PlaceholderText = "value"; valBox.PlaceholderColor3 = T.sub
-        valBox.TextColor3 = T.accent; valBox.TextSize = 12; valBox.Font = FONT
-        valBox.TextXAlignment = Enum.TextXAlignment.Left; valBox.ClearTextOnFocus = false
-        valBox.ZIndex = 3; valBox.Parent = card
-        corner(valBox,6); stroke(valBox,T.accentD,1)
-        local vPad = Instance.new("UIPadding"); vPad.PaddingLeft = UDim.new(0,8); vPad.Parent = valBox
-
-        -- Debug label: shows which folder the stat was found in (or "not found")
-        local dbgLbl = Instance.new("TextLabel"); dbgLbl.Size = UDim2.new(1,-24,0,14)
-        dbgLbl.Position = UDim2.new(0,12,0,62); dbgLbl.BackgroundTransparency = 1
-        dbgLbl.TextSize = 9; dbgLbl.Font = FONT; dbgLbl.TextColor3 = T.sub
-        dbgLbl.TextXAlignment = Enum.TextXAlignment.Left; dbgLbl.Parent = card
-        local function refreshDbg()
-            for _, child in ipairs(LocalPlayer:GetChildren()) do
-                local s = child:FindFirstChild(statName)
-                if s then
-                    dbgLbl.Text = "found: "..child.Name.."."..statName.." = "..tostring(s.Value)
-                    dbgLbl.TextColor3 = T.accent; return
-                end
-            end
-            dbgLbl.Text = "stat \""..statName.."\" not found in player"
-            dbgLbl.TextColor3 = T.red
-        end
-        refreshDbg()
-
-        local pill, setPill = makePillToggle(card, false, function(v)
-            spoofActive = v
-            statusLbl.Text = v and "spoofing" or "off"
-            statusLbl.TextColor3 = v and T.accent or T.sub
-            refreshDbg()
-            if v then
-                applySpoof()
-                if conn then conn:Disconnect() end
-                conn = RunService.Heartbeat:Connect(function()
-                    if not spoofActive then conn:Disconnect(); conn = nil; return end
-                    applySpoof()
-                end)
-            else
-                if conn then conn:Disconnect(); conn = nil end
-            end
-        end)
-        pill.Position = UDim2.new(1,-52,0,6); pill.Parent = card
-
-        valBox.FocusLost:Connect(function()
-            tw(valBox,{BackgroundColor3=T.inputBG})
-            local num = tonumber(valBox.Text)
-            if not num then valBox.Text = tostring(defV); return end
-            valBox.Text = tostring(math.floor(num))
-            if spoofActive then applySpoof() end
-            refreshDbg()
-        end)
-        valBox.Focused:Connect(function() tw(valBox,{BackgroundColor3=Color3.fromRGB(45,55,45)}) end)
-
-        card.MouseEnter:Connect(function() tw(card,{BackgroundColor3=T.cardH}) end)
-        card.MouseLeave:Connect(function() tw(card,{BackgroundColor3=T.card}) end)
-        return card
-    end
-
-    -- NOTE: statName must exactly match the ValueBase name inside the game's leaderstats folder.
-    -- The debug label on each card will tell you if the stat was found or what name to use.
-    makeStatSpoofer(offsetPage, "level",       "Level",       0,     9999,  100)
-    makeStatSpoofer(offsetPage, "win streak",  "WinStreak",   0,     9999,  10)
-    makeStatSpoofer(offsetPage, "current elo", "ELO",         -9999, 9999,  1000)
-
-    -- Quick presets
     sectionLabel(offsetPage,"quick presets")
     local builtRow = Instance.new("Frame"); builtRow.Size = UDim2.new(1,0,0,36)
     builtRow.BackgroundTransparency = 1; builtRow.Parent = offsetPage
@@ -911,7 +811,7 @@ local function buildGUI()
                     corner(pPill,11)
                     local pPT = Instance.new("Frame"); pPT.Size = UDim2.new(0,15,0,15)
                     pPT.Position = active and UDim2.new(1,-18,0.5,-7.5) or UDim2.new(0,3,0.5,-7.5)
-                    pPT.BackgroundColor3 = Color3.fromRGB(240,240,240); pPT.BorderSizePixel = 0; pPT.Parent = row
+                    pPT.BackgroundColor3 = Color3.fromRGB(240,240,240); pPT.BorderSizePixel = 0; pPT.Parent = pPill
                     corner(pPT,8)
 
                     local clickable = Instance.new("TextButton"); clickable.Size = UDim2.new(1,0,1,0)
@@ -973,6 +873,26 @@ local function buildGUI()
     makeKeybindCard(settingsPage,"open / close menu",
         function() return state.guiKey end, function(k) state.guiKey=k end, 2)
 
+    -- ── Overlay buttons toggle
+    sectionLabel(settingsPage,"overlay buttons",3)
+    local overlayCard = Instance.new("Frame"); overlayCard.Size = UDim2.new(1,0,0,54); overlayCard.LayoutOrder = 4
+    overlayCard.BackgroundColor3 = T.card; overlayCard.BorderSizePixel = 0; overlayCard.Parent = settingsPage
+    corner(overlayCard,10); stroke(overlayCard,T.border)
+    local ovLbl = Instance.new("TextLabel"); ovLbl.Size = UDim2.new(1,-60,0,20); ovLbl.Position = UDim2.new(0,14,0,8)
+    ovLbl.BackgroundTransparency = 1; ovLbl.Text = "show overlay buttons"; ovLbl.TextSize = 13; ovLbl.Font = FONT_BOLD
+    ovLbl.TextColor3 = T.text; ovLbl.TextXAlignment = Enum.TextXAlignment.Left; ovLbl.Parent = overlayCard
+    local ovDesc = Instance.new("TextLabel"); ovDesc.Size = UDim2.new(1,-60,0,14); ovDesc.Position = UDim2.new(0,14,0,30)
+    ovDesc.BackgroundTransparency = 1; ovDesc.Text = "floating toggle ui / lock buttons"; ovDesc.TextSize = 10; ovDesc.Font = FONT
+    ovDesc.TextColor3 = T.sub; ovDesc.TextXAlignment = Enum.TextXAlignment.Left; ovDesc.Parent = overlayCard
+    local _ovPill, setOvPill = makePillToggle(overlayCard, state.showMobilePanel, function(v)
+        state.showMobilePanel = v; saveAll()
+        -- show/hide the panel immediately; panel is built after this card so we patch via upvalue below
+    end)
+    _ovPill.Position = UDim2.new(1,-52,0.5,-11); _ovPill.Parent = overlayCard
+    overlayCard.MouseEnter:Connect(function() tw(overlayCard,{BackgroundColor3=T.cardH}) end)
+    overlayCard.MouseLeave:Connect(function() tw(overlayCard,{BackgroundColor3=T.card}) end)
+
+    -- File info
     sectionLabel(settingsPage,"file",6)
     local fileCard = Instance.new("Frame"); fileCard.Size = UDim2.new(1,0,0,44); fileCard.LayoutOrder = 7
     fileCard.BackgroundColor3 = T.card; fileCard.BorderSizePixel = 0; fileCard.Parent = settingsPage
@@ -987,6 +907,7 @@ local function buildGUI()
     fSub.TextSize = 10; fSub.Font = FONT; fSub.TextXAlignment = Enum.TextXAlignment.Left
     fSub.TextColor3 = (writefile and isfile) and T.accent or T.red; fSub.Parent = fileCard
 
+    -- Danger zone
     sectionLabel(settingsPage,"danger zone",8)
     local unloadBtn = Instance.new("TextButton"); unloadBtn.Size = UDim2.new(1,0,0,40); unloadBtn.LayoutOrder = 9
     unloadBtn.BackgroundColor3 = Color3.fromRGB(50,14,14); unloadBtn.BorderSizePixel = 0
@@ -1010,6 +931,7 @@ local function buildGUI()
         end
     end)
 
+    -- Keybind listener
     UserInputService.InputBegan:Connect(function(inp, gp)
         if gp then return end
         if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
@@ -1022,61 +944,101 @@ local function buildGUI()
     end)
 
     -- ════════════════════════════════════════════════════════════════════
-    --  MOBILE PANEL
+    --  OVERLAY PANEL  (floating buttons — shown to all users, toggleable)
     -- ════════════════════════════════════════════════════════════════════
-    local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
-    if isMobile then
-        local BTN_W, BTN_H, BTN_GAP = 110, 46, 8
-        local mobilePanel = Instance.new("Frame")
-        mobilePanel.Name = "MobilePanel"
-        mobilePanel.Size = UDim2.new(0,BTN_W,0,BTN_H*2+BTN_GAP)
-        mobilePanel.Position = UDim2.new(1,-(BTN_W+10),0,120)
-        mobilePanel.BackgroundTransparency = 1; mobilePanel.ZIndex = 30; mobilePanel.Parent = gui
+    local BTN_W, BTN_H, BTN_GAP = 120, 44, 6
+    local mobilePanel = Instance.new("Frame")
+    mobilePanel.Name = "OverlayPanel"
+    mobilePanel.Size = UDim2.new(0,BTN_W, 0, BTN_H*2 + BTN_GAP)
+    mobilePanel.Position = UDim2.new(1,-(BTN_W+12), 0, 120)
+    mobilePanel.BackgroundTransparency = 1
+    mobilePanel.ZIndex = 30
+    mobilePanel.Visible = state.showMobilePanel
+    mobilePanel.Parent = gui
 
-        local function makeMobileBtn(labelText, yOffset, onClick)
-            local btn = Instance.new("TextButton")
-            btn.Size = UDim2.new(1,0,0,BTN_H); btn.Position = UDim2.new(0,0,0,yOffset)
-            btn.BackgroundColor3 = Color3.fromRGB(8,8,8); btn.BorderSizePixel = 0
-            btn.Text = labelText:lower(); btn.TextSize = 14; btn.Font = FONT_BOLD
-            btn.TextColor3 = Color3.fromRGB(220,220,220); btn.AutoButtonColor = false; btn.ZIndex = 31; btn.Parent = mobilePanel
-            corner(btn,4)
-            local s = Instance.new("UIStroke"); s.Color = Color3.fromRGB(180,30,30); s.Thickness = 2; s.Parent = btn
-            btn.MouseButton1Click:Connect(onClick)
-            btn.InputBegan:Connect(function(inp)
-                if inp.UserInputType == Enum.UserInputType.Touch then tw(btn,{BackgroundColor3=Color3.fromRGB(30,8,8)}) end
-            end)
-            btn.InputEnded:Connect(function(inp)
-                if inp.UserInputType == Enum.UserInputType.Touch then tw(btn,{BackgroundColor3=Color3.fromRGB(8,8,8)}) end
-            end)
-            return btn
-        end
+    -- Wire the pill toggle to actually show/hide the panel
+    local origOvChange = _ovPill:FindFirstChildOfClass("TextButton")
+    -- re-bind via a wrapper now that mobilePanel exists
+    setOvPill(state.showMobilePanel, false)  -- sync visual
+    local ovClick = _ovPill:FindFirstChildOfClass("TextButton")
+    -- Rebind properly: destroy old click handler by replacing with closure
+    -- (pill toggle already fires onChange; we just need to hook mobilePanel.Visible)
+    -- So we add a second connection via a separate transparent button layered on top
+    local ovHook = Instance.new("TextButton"); ovHook.Size = UDim2.new(1,0,1,0)
+    ovHook.BackgroundTransparency = 1; ovHook.Text = ""; ovHook.ZIndex = 4; ovHook.Parent = _ovPill
+    ovHook.MouseButton1Click:Connect(function()
+        -- state.showMobilePanel is already toggled by the pill's own handler;
+        -- we just sync the panel visibility here
+        task.defer(function() mobilePanel.Visible = state.showMobilePanel end)
+    end)
 
-        makeMobileBtn("toggle ui", 0, function() setGuiVisible(not guiVisible) end)
-        local lockBtn
-        lockBtn = makeMobileBtn("lock ui", BTN_H+BTN_GAP, function()
-            guiLocked = not guiLocked
-            local s = lockBtn:FindFirstChildOfClass("UIStroke")
-            if s then s.Color = guiLocked and Color3.fromRGB(60,180,80) or Color3.fromRGB(180,30,30) end
-            lockBtn.Text = guiLocked and "locked 🔒" or "lock ui"
+    local function makeOverlayBtn(labelText, yOffset, onClick)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1,0,0,BTN_H)
+        btn.Position = UDim2.new(0,0,0,yOffset)
+        -- Match main GUI style: dark card bg, green accent border + text
+        btn.BackgroundColor3 = T.card
+        btn.BorderSizePixel = 0
+        btn.Text = labelText:lower()
+        btn.TextSize = 13
+        btn.Font = FONT_BOLD
+        btn.TextColor3 = T.accent
+        btn.AutoButtonColor = false
+        btn.ZIndex = 31
+        btn.Parent = mobilePanel
+        corner(btn, 10)
+        stroke(btn, T.accentD, 1.5)
+        btn.MouseEnter:Connect(function() tw(btn,{BackgroundColor3=T.cardH}) end)
+        btn.MouseLeave:Connect(function() tw(btn,{BackgroundColor3=T.card}) end)
+        btn.InputBegan:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.Touch then tw(btn,{BackgroundColor3=T.cardH}) end
         end)
-
-        local panDragging, panStart, panOrig = false, nil, nil
-        mobilePanel.InputBegan:Connect(function(inp)
-            if inp.UserInputType == Enum.UserInputType.Touch then
-                panDragging = true; panStart = inp.Position; panOrig = mobilePanel.Position
-            end
+        btn.InputEnded:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.Touch then tw(btn,{BackgroundColor3=T.card}) end
         end)
-        mobilePanel.InputEnded:Connect(function(inp)
-            if inp.UserInputType == Enum.UserInputType.Touch then panDragging = false end
-        end)
-        UserInputService.InputChanged:Connect(function(inp)
-            if panDragging and inp.UserInputType == Enum.UserInputType.Touch then
-                local d = inp.Position - panStart
-                mobilePanel.Position = UDim2.new(panOrig.X.Scale,panOrig.X.Offset+d.X,panOrig.Y.Scale,panOrig.Y.Offset+d.Y)
-            end
-        end)
+        btn.MouseButton1Click:Connect(onClick)
+        return btn
     end
 
+    makeOverlayBtn("toggle ui", 0, function() setGuiVisible(not guiVisible) end)
+
+    local lockBtn
+    lockBtn = makeOverlayBtn("lock ui", BTN_H + BTN_GAP, function()
+        guiLocked = not guiLocked
+        if guiLocked then
+            lockBtn.Text = "unlock ui"
+            tw(lockBtn, {BackgroundColor3=Color3.fromRGB(28,42,30)})
+            -- swap stroke to a brighter green to signal locked state
+            local s = lockBtn:FindFirstChildOfClass("UIStroke")
+            if s then s.Color = T.accent end
+        else
+            lockBtn.Text = "lock ui"
+            tw(lockBtn, {BackgroundColor3=T.card})
+            local s = lockBtn:FindFirstChildOfClass("UIStroke")
+            if s then s.Color = T.accentD end
+        end
+    end)
+
+    -- Draggable overlay panel
+    local panDragging, panStart, panOrig = false, nil, nil
+    mobilePanel.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton2 then
+            panDragging = true; panStart = inp.Position; panOrig = mobilePanel.Position
+        end
+    end)
+    mobilePanel.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton2 then
+            panDragging = false
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(inp)
+        if panDragging and (inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseMovement) then
+            local d = inp.Position - panStart
+            mobilePanel.Position = UDim2.new(panOrig.X.Scale, panOrig.X.Offset+d.X, panOrig.Y.Scale, panOrig.Y.Offset+d.Y)
+        end
+    end)
+
+    -- ── Init
     switchTab(1); rebuildTargets(); updateStatus()
 end
 
